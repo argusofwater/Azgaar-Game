@@ -13,7 +13,8 @@ import {
   buildIndustry,
   recruitArmy,
   attackProvince,
-  endTurn
+  endTurn,
+  generateWorldBehavior
 } from './state.js';
 import { CanvasMapRenderer } from './mapRenderer.js';
 import { importAzgaarFile, loadDemoMap } from './importer.js';
@@ -52,7 +53,10 @@ const els = {
   offerAllianceBtn: document.getElementById('offerAllianceBtn'),
   makeNeutralBtn: document.getElementById('makeNeutralBtn'),
   closeDiplomacyBtn: document.getElementById('closeDiplomacyBtn'),
-  eventFlash: document.getElementById('eventFlash')
+  eventFlash: document.getElementById('eventFlash'),
+  worldSeedBox: document.getElementById('worldSeedBox'),
+  worldTraitsBox: document.getElementById('worldTraitsBox'),
+  rerollSeedBtn: document.getElementById('rerollSeedBtn')
 };
 
 let selectedDiplomacyNation = null;
@@ -73,6 +77,7 @@ function boot() {
   wireNationControls();
   wireActionControls();
   wireDiplomacyControls();
+  wireWorldControls();
   loadWorld(loadDemoMap(), 'Demo map loaded.');
   addLog('Game initialized. Load an Azgaar JSON or test the demo map.');
   renderUI();
@@ -81,33 +86,10 @@ function boot() {
 function wireImportControls() {
   els.openImportBtn?.addEventListener('click', () => showImportModal());
   els.closeImportBtn?.addEventListener('click', () => hideImportModal());
-
-  els.selectJsonBtn?.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    els.azgaarFile?.click();
-  });
-
-  els.manualImportBtn?.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    importSelectedFile();
-  });
-
-  els.azgaarFile?.addEventListener('change', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    const file = event.target?.files?.[0];
-    if (file) setImportStatus(`Selected ${file.name}. Importing...`);
-    importSelectedFile();
-  });
-
-  els.loadDemoBtn?.addEventListener('click', event => {
-    event.preventDefault();
-    loadWorld(loadDemoMap(), 'Demo map loaded.');
-    hideImportModal();
-  });
-
+  els.selectJsonBtn?.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); els.azgaarFile?.click(); });
+  els.manualImportBtn?.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); importSelectedFile(); });
+  els.azgaarFile?.addEventListener('change', event => { event.preventDefault(); event.stopPropagation(); const file = event.target?.files?.[0]; if (file) setImportStatus(`Selected ${file.name}. Importing...`); importSelectedFile(); });
+  els.loadDemoBtn?.addEventListener('click', event => { event.preventDefault(); loadWorld(loadDemoMap(), 'Demo map loaded.'); hideImportModal(); });
   setupDropZone();
 }
 
@@ -123,6 +105,15 @@ function wireNationControls() {
   });
 }
 
+function wireWorldControls() {
+  els.rerollSeedBtn?.addEventListener('click', () => {
+    generateWorldBehavior();
+    addLog(`World behavior rerolled: ${state.worldSeed}.`);
+    renderWorldSeed();
+    renderLog();
+  });
+}
+
 function wireActionControls() {
   els.buildIndustryBtn?.addEventListener('click', () => handleActionResult(buildIndustry()));
   els.recruitArmyBtn?.addEventListener('click', () => handleActionResult(recruitArmy()));
@@ -130,11 +121,7 @@ function wireActionControls() {
     const oldOwner = getSelectedProvince()?.owner;
     const result = attackProvince();
     if (result?.conquered) {
-      renderer.startConquestAnimation(
-        result.provinceId,
-        state.nations[result.oldOwner]?.color || '#6b7280',
-        state.nations[state.playerNation]?.color || '#facc15'
-      );
+      renderer.startConquestAnimation(result.provinceId, state.nations[result.oldOwner]?.color || '#6b7280', state.nations[state.playerNation]?.color || '#facc15');
       flashEvent('Province Captured', `${state.nations[state.playerNation]?.name || 'Your nation'} captured new territory.`, 'war');
     } else if (oldOwner && typeof result !== 'string') {
       renderer.updateWorld({ nations: state.nations, provinces: state.provinces, selectedProvinceId: state.selectedProvinceId });
@@ -142,7 +129,8 @@ function wireActionControls() {
     handleActionResult(result);
   });
   els.endTurnBtn?.addEventListener('click', () => {
-    handleActionResult(endTurn());
+    const result = endTurn();
+    handleActionResult(result);
     flashEvent('New Turn', `Turn ${state.turn} begins. Income collected and armies paid.`, 'neutral');
   });
 }
@@ -175,10 +163,7 @@ function wireDiplomacyControls() {
 
 async function importSelectedFile() {
   const file = els.azgaarFile?.files?.[0];
-  if (!file) {
-    setImportStatus('No JSON file selected. Use Select JSON File or drag a file into the drop zone.');
-    return;
-  }
+  if (!file) return setImportStatus('No JSON file selected. Use Select JSON File or drag a file into the drop zone.');
   await importFile(file);
 }
 
@@ -188,13 +173,11 @@ async function importFile(file) {
     console.log('File:', file);
     if (!file) throw new Error('No file was provided to the importer.');
     if (!file.name.toLowerCase().endsWith('.json')) throw new Error(`Expected a .json file, got ${file.name}.`);
-
     setImportStatus(`Reading ${file.name}...`);
     const world = await importAzgaarFile(file);
     console.log('Converted nations:', Object.keys(world.nations).length);
     console.log('Converted provinces:', world.provinces.length);
     console.groupEnd();
-
     if (!world?.provinces?.length || !Object.keys(world.nations || {}).length) throw new Error('Importer returned an empty world.');
     loadWorld(world, `Imported ${world.provinces.length} provinces from ${file.name}.`);
     setImportStatus(`Imported ${file.name}.`);
@@ -230,23 +213,24 @@ function setupDropZone() {
   els.dropZone.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); els.azgaarFile?.click(); });
   els.dropZone.addEventListener('dragover', () => els.dropZone.classList.add('dragging'));
   els.dropZone.addEventListener('dragleave', () => els.dropZone.classList.remove('dragging'));
-  els.dropZone.addEventListener('drop', async event => {
-    els.dropZone.classList.remove('dragging');
-    const file = event.dataTransfer?.files?.[0];
-    if (!file) return setImportStatus('Drop failed: no file detected.');
-    await importFile(file);
-  });
+  els.dropZone.addEventListener('drop', async event => { els.dropZone.classList.remove('dragging'); const file = event.dataTransfer?.files?.[0]; if (!file) return setImportStatus('Drop failed: no file detected.'); await importFile(file); });
 }
 
 function refreshNationSelect() {
   if (!els.nationSelect) return;
+  const previous = state.playerNation || els.nationSelect.value;
   els.nationSelect.innerHTML = '';
-  Object.entries(state.nations).forEach(([id, nation]) => {
-    const option = document.createElement('option');
-    option.value = id;
-    option.textContent = nation.name;
-    els.nationSelect.appendChild(option);
-  });
+  Object.entries(state.nations)
+    .sort(([, a], [, b]) => a.name.localeCompare(b.name))
+    .forEach(([id, nation]) => {
+      const owned = state.provinces.filter(p => p.owner === id).length;
+      const option = document.createElement('option');
+      option.value = id;
+      option.textContent = `${nation.name} (${owned} provinces)`;
+      option.title = nation.name;
+      els.nationSelect.appendChild(option);
+    });
+  if (previous && state.nations[previous]) els.nationSelect.value = previous;
 }
 
 function handleActionResult(result) {
@@ -258,6 +242,7 @@ function handleActionResult(result) {
 
 function renderUI() {
   renderTurn();
+  renderWorldSeed();
   renderResources();
   renderProvinceInfo();
   renderNationStats();
@@ -266,6 +251,16 @@ function renderUI() {
 }
 
 function renderTurn() { if (els.turnDisplay) els.turnDisplay.textContent = `Turn ${state.turn}`; }
+
+function renderWorldSeed() {
+  if (els.worldSeedBox) els.worldSeedBox.textContent = state.worldSeed || 'Unseeded';
+  if (els.worldTraitsBox) {
+    const t = state.worldTraits;
+    els.worldTraitsBox.innerHTML = t
+      ? `Aggression ${(t.aggression * 100).toFixed(0)}% • Development ${(t.development * 100).toFixed(0)}%<br>Volatility ${(t.volatility * 100).toFixed(0)}% • Diplomacy ${(t.diplomacy * 100).toFixed(0)}%`
+      : 'No world behavior generated yet.';
+  }
+}
 
 function renderResources() {
   if (!state.playerNation || !state.nations[state.playerNation]) {
@@ -284,12 +279,7 @@ function renderProvinceInfo() {
   if (!els.provinceInfo) return;
   if (!province) return els.provinceInfo.innerHTML = '<p class="muted">Select a province.</p>';
   const owner = state.nations[province.owner];
-  els.provinceInfo.innerHTML = `
-    <div class="stat"><span>Name</span><strong>${province.name}</strong></div>
-    <div class="stat"><span>Owner</span><strong>${owner?.name ?? 'Unknown'}</strong></div>
-    <div class="stat"><span>Industry</span><strong>${province.industry}</strong></div>
-    <div class="stat"><span>Army</span><strong>${province.army}</strong></div>
-    <div class="stat"><span>Neighbors</span><strong>${province.neighbors?.length ?? 0}</strong></div>`;
+  els.provinceInfo.innerHTML = `<div class="stat"><span>Name</span><strong>${province.name}</strong></div><div class="stat"><span>Owner</span><strong>${owner?.name ?? 'Unknown'}</strong></div><div class="stat"><span>Industry</span><strong>${province.industry}</strong></div><div class="stat"><span>Army</span><strong>${province.army}</strong></div><div class="stat"><span>Neighbors</span><strong>${province.neighbors?.length ?? 0}</strong></div>`;
 }
 
 function renderNationStats() {
@@ -301,16 +291,7 @@ function renderNationStats() {
   const army = owned.reduce((sum, p) => sum + p.army, 0);
   const allies = getRelationsFor(state.playerNation, 'ally').map(id => state.nations[id]?.name).filter(Boolean);
   const enemies = getRelationsFor(state.playerNation, 'enemy').map(id => state.nations[id]?.name).filter(Boolean);
-  els.nationStats.innerHTML = `
-    <div class="stat"><span>Nation</span><strong>${nation.name}</strong></div>
-    <div class="stat"><span>Provinces</span><strong>${owned.length}</strong></div>
-    <div class="stat"><span>Industry</span><strong>${industry}</strong></div>
-    <div class="stat"><span>Army</span><strong>${army}</strong></div>
-    <div class="stat"><span>Treasury</span><strong>${nation.treasury ?? 0}</strong></div>
-    <div class="stat"><span>Manpower</span><strong>${nation.manpower ?? 0}</strong></div>
-    <div class="stat"><span>Income / Turn</span><strong>${calculateIncome(state.playerNation)}</strong></div>
-    <div class="stat"><span>Allies</span><strong>${allies.length ? allies.join(', ') : 'None'}</strong></div>
-    <div class="stat"><span>Enemies</span><strong>${enemies.length ? enemies.join(', ') : 'None'}</strong></div>`;
+  els.nationStats.innerHTML = `<div class="stat"><span>Nation</span><strong>${nation.name}</strong></div><div class="stat"><span>Provinces</span><strong>${owned.length}</strong></div><div class="stat"><span>Industry</span><strong>${industry}</strong></div><div class="stat"><span>Army</span><strong>${army}</strong></div><div class="stat"><span>Treasury</span><strong>${nation.treasury ?? 0}</strong></div><div class="stat"><span>Manpower</span><strong>${nation.manpower ?? 0}</strong></div><div class="stat"><span>Income / Turn</span><strong>${calculateIncome(state.playerNation)}</strong></div><div class="stat"><span>Allies</span><strong>${allies.length ? allies.join(', ') : 'None'}</strong></div><div class="stat"><span>Enemies</span><strong>${enemies.length ? enemies.join(', ') : 'None'}</strong></div>`;
 }
 
 function renderNationList() {
@@ -321,7 +302,7 @@ function renderNationList() {
     const army = owned.reduce((sum, p) => sum + p.army, 0);
     const relation = !state.playerNation ? 'neutral' : id === state.playerNation ? 'player' : getRelation(state.playerNation, id);
     const marker = relation === 'player' ? '👑' : relation === 'ally' ? '🤝' : relation === 'enemy' ? '⚔️' : '•';
-    return `<button class="nation-row" data-nation-id="${id}"><span class="nation-dot" style="background:${nation.color}"></span><span class="nation-name">${nation.name}</span><span>${marker}</span><span>⚙ ${industry}</span><span>⚔ ${army}</span><span>▣ ${owned.length}</span></button>`;
+    return `<button class="nation-row" data-nation-id="${id}" title="${nation.name}"><span class="nation-dot" style="background:${nation.color}"></span><span class="nation-name">${nation.name}</span><span>${marker}</span><span>⚙ ${industry}</span><span>⚔ ${army}</span><span>▣ ${owned.length}</span></button>`;
   }).join('');
   els.nationList.querySelectorAll('[data-nation-id]').forEach(btn => btn.addEventListener('click', () => openDiplomacyModal(btn.dataset.nationId)));
 }
@@ -335,16 +316,9 @@ function openDiplomacyModal(nationId) {
   const army = owned.reduce((sum, p) => sum + p.army, 0);
   const relation = !state.playerNation ? 'neutral' : nationId === state.playerNation ? 'your nation' : getRelation(state.playerNation, nationId);
   els.diplomacyNationName.textContent = nation.name;
-  els.diplomacyNationDetails.innerHTML = `
-    <div class="stat"><span>Relation</span><strong>${relation}</strong></div>
-    <div class="stat"><span>Provinces</span><strong>${owned.length}</strong></div>
-    <div class="stat"><span>Industry</span><strong>${industry}</strong></div>
-    <div class="stat"><span>Army</span><strong>${army}</strong></div>
-    <div class="stat"><span>Treasury</span><strong>${nation.treasury ?? 0}</strong></div>`;
+  els.diplomacyNationDetails.innerHTML = `<div class="stat"><span>Relation</span><strong>${relation}</strong></div><div class="stat"><span>Provinces</span><strong>${owned.length}</strong></div><div class="stat"><span>Industry</span><strong>${industry}</strong></div><div class="stat"><span>Army</span><strong>${army}</strong></div><div class="stat"><span>Treasury</span><strong>${nation.treasury ?? 0}</strong></div>`;
   const disabled = !state.playerNation || nationId === state.playerNation;
-  els.declareWarBtn.disabled = disabled;
-  els.offerAllianceBtn.disabled = disabled;
-  els.makeNeutralBtn.disabled = disabled;
+  els.declareWarBtn.disabled = disabled; els.offerAllianceBtn.disabled = disabled; els.makeNeutralBtn.disabled = disabled;
   els.diplomacyModal.classList.remove('hidden');
 }
 
@@ -354,12 +328,4 @@ function showImportModal() { els.importModal?.classList.remove('hidden'); }
 function hideImportModal() { els.importModal?.classList.add('hidden'); }
 function setImportStatus(message) { if (els.importStatus) els.importStatus.textContent = message; }
 function setText(el, value) { if (el) el.textContent = String(value); }
-
-function flashEvent(title, body, type = 'neutral') {
-  if (!els.eventFlash) return;
-  clearTimeout(flashTimer);
-  els.eventFlash.className = `event-flash ${type}`;
-  els.eventFlash.innerHTML = `<strong>${title}</strong><span>${body}</span>`;
-  requestAnimationFrame(() => els.eventFlash.classList.add('show'));
-  flashTimer = setTimeout(() => els.eventFlash.classList.remove('show'), 6000);
-}
+function flashEvent(title, body, type = 'neutral') { if (!els.eventFlash) return; clearTimeout(flashTimer); els.eventFlash.className = `event-flash ${type}`; els.eventFlash.innerHTML = `<strong>${title}</strong><span>${body}</span>`; requestAnimationFrame(() => els.eventFlash.classList.add('show')); flashTimer = setTimeout(() => els.eventFlash.classList.remove('show'), 6000); }
