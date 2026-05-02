@@ -84,6 +84,112 @@ export function calculateIncome(nationId) {
   return industryIncome + provinceIncome;
 }
 
+export function canActOnProvince(province) {
+  return Boolean(province && state.playerNation && province.owner === state.playerNation);
+}
+
+export function getIndustryBuildCost(province) {
+  return 120 + province.industry * 45;
+}
+
+export function getRecruitCost(amount, province) {
+  return amount * (35 + Math.max(0, province.army - 4) * 2);
+}
+
+export function buildIndustry() {
+  const province = getSelectedProvince();
+  if (!canActOnProvince(province)) return 'Select one of your provinces first.';
+
+  const nation = state.nations[state.playerNation];
+  const cost = getIndustryBuildCost(province);
+  const commandCost = 2;
+
+  if ((nation.treasury ?? 0) < cost) return `Not enough treasury. Building industry costs ${cost}.`;
+  if ((nation.command ?? 0) < commandCost) return `Not enough command. Building industry costs ${commandCost}.`;
+
+  nation.treasury -= cost;
+  nation.command -= commandCost;
+  province.industry += 1;
+  addLog(`${province.name} gains +1 industry for ${cost} treasury.`);
+  return true;
+}
+
+export function recruitArmy() {
+  const province = getSelectedProvince();
+  if (!canActOnProvince(province)) return 'Select one of your provinces first.';
+
+  const nation = state.nations[state.playerNation];
+  const amount = Math.min(3, nation.manpower ?? 0);
+  if (amount <= 0) return 'No manpower remains.';
+
+  const cost = getRecruitCost(amount, province);
+  if ((nation.treasury ?? 0) < cost) return `Not enough treasury. Recruiting ${amount} army costs ${cost}.`;
+
+  nation.treasury -= cost;
+  nation.manpower -= amount;
+  province.army += amount;
+  addLog(`${province.name} recruits +${amount} army for ${cost} treasury.`);
+  return true;
+}
+
+export function attackProvince() {
+  const target = getSelectedProvince();
+  if (!target) return 'Select an enemy province first.';
+  if (!state.playerNation) return 'Choose your nation first.';
+  if (target.owner === state.playerNation) return 'You cannot attack your own province.';
+
+  const attackers = state.provinces
+    .filter(p => p.owner === state.playerNation && Array.isArray(p.neighbors) && p.neighbors.includes(target.id))
+    .sort((a, b) => b.army - a.army);
+
+  const attacker = attackers[0];
+  if (!attacker) return 'You need an adjacent province to attack from.';
+  if (attacker.army < 2) return `${attacker.name} lacks enough army to attack.`;
+
+  if (getRelation(state.playerNation, target.owner) !== 'enemy') {
+    declareWarWithAllies(state.playerNation, target.owner);
+    addLog(`${state.nations[state.playerNation].name} declares war on ${state.nations[target.owner]?.name || 'an unknown power'}.`);
+  }
+
+  const attackPower = attacker.army + roll(6);
+  const defensePower = target.army + target.industry + roll(6);
+
+  if (attackPower > defensePower) {
+    const oldOwner = target.owner;
+    target.owner = state.playerNation;
+    target.army = Math.max(1, Math.floor(attacker.army / 2));
+    attacker.army = Math.max(1, Math.floor(attacker.army / 2));
+    addLog(`${target.name} falls to ${state.nations[state.playerNation].name}.`);
+    cleanupDefeatedNations();
+    return { conquered: true, provinceId: target.id, oldOwner };
+  }
+
+  attacker.army = Math.max(1, attacker.army - 2);
+  target.army = Math.max(1, target.army - 1);
+  addLog(`${target.name} holds against the attack.`);
+  return false;
+}
+
+export function endTurn() {
+  state.turn += 1;
+
+  Object.entries(state.nations).forEach(([id, nation]) => {
+    const owned = state.provinces.filter(p => p.owner === id);
+    const industry = owned.reduce((sum, p) => sum + p.industry, 0);
+    const army = owned.reduce((sum, p) => sum + p.army, 0);
+    const income = calculateIncome(id);
+    const upkeep = Math.floor(army * 2);
+
+    nation.treasury = Math.max(0, (nation.treasury ?? 0) + income - upkeep);
+    nation.command = Math.min(10, (nation.command ?? 0) + Math.ceil(industry / 3));
+    nation.manpower = (nation.manpower ?? 0) + owned.length * 2;
+  });
+
+  addLog(`Turn ${state.turn} begins. Income collected and armies paid.`);
+  cleanupDefeatedNations();
+  return true;
+}
+
 export function addLog(message) {
   state.log.unshift(message);
   state.log = state.log.slice(0, 80);
@@ -99,4 +205,8 @@ export function cleanupDefeatedNations() {
     addLog(`${name} has been eliminated from the world.`);
   });
   return defeated;
+}
+
+function roll(sides) {
+  return Math.floor(Math.random() * sides) + 1;
 }
