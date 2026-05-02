@@ -57,10 +57,36 @@ function boot() {
 function wireImportControls() {
   els.openImportBtn?.addEventListener('click', () => showImportModal());
   els.closeImportBtn?.addEventListener('click', () => hideImportModal());
-  els.selectJsonBtn?.addEventListener('click', () => els.azgaarFile?.click());
-  els.manualImportBtn?.addEventListener('click', () => importSelectedFile());
-  els.azgaarFile?.addEventListener('change', () => importSelectedFile());
-  els.loadDemoBtn?.addEventListener('click', () => loadWorld(loadDemoMap(), 'Demo map loaded.'));
+
+  els.selectJsonBtn?.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    els.azgaarFile?.click();
+  });
+
+  els.manualImportBtn?.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    importSelectedFile();
+  });
+
+  els.azgaarFile?.addEventListener('click', event => {
+    event.stopPropagation();
+  });
+
+  els.azgaarFile?.addEventListener('change', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const file = event.target?.files?.[0];
+    if (file) setImportStatus(`Selected ${file.name}. Importing...`);
+    importSelectedFile();
+  });
+
+  els.loadDemoBtn?.addEventListener('click', event => {
+    event.preventDefault();
+    loadWorld(loadDemoMap(), 'Demo map loaded.');
+    hideImportModal();
+  });
 
   setupDropZone();
 }
@@ -80,7 +106,7 @@ function wireNationControls() {
 async function importSelectedFile() {
   const file = els.azgaarFile?.files?.[0];
   if (!file) {
-    setImportStatus('No JSON file selected.');
+    setImportStatus('No JSON file selected. Use Select JSON File or drag a file into the drop zone.');
     return;
   }
   await importFile(file);
@@ -88,16 +114,36 @@ async function importSelectedFile() {
 
 async function importFile(file) {
   try {
+    console.groupCollapsed('[Azgaar Import] start');
+    console.log('File:', file);
+
+    if (!file) throw new Error('No file was provided to the importer.');
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      throw new Error(`Expected a .json file, got ${file.name}.`);
+    }
+
     setImportStatus(`Reading ${file.name}...`);
     const world = await importAzgaarFile(file);
+
+    console.log('Converted nations:', Object.keys(world.nations).length);
+    console.log('Converted provinces:', world.provinces.length);
+    console.groupEnd();
+
+    if (!world?.provinces?.length || !Object.keys(world.nations || {}).length) {
+      throw new Error('Importer returned an empty world.');
+    }
+
     loadWorld(world, `Imported ${world.provinces.length} provinces from ${file.name}.`);
     setImportStatus(`Imported ${file.name}.`);
     hideImportModal();
   } catch (error) {
-    console.error(error);
+    console.error('[Azgaar Import] failed:', error);
+    console.groupEnd?.();
     setImportStatus(`Import failed: ${error.message}`);
     addLog(`Import failed: ${error.message}`);
     renderLog();
+  } finally {
+    if (els.azgaarFile) els.azgaarFile.value = '';
   }
 }
 
@@ -115,7 +161,7 @@ function setupDropZone() {
   if (!els.dropZone) return;
 
   ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    window.addEventListener(eventName, event => {
+    document.addEventListener(eventName, event => {
       event.preventDefault();
       event.stopPropagation();
     });
@@ -125,14 +171,19 @@ function setupDropZone() {
     });
   });
 
+  els.dropZone.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    els.azgaarFile?.click();
+  });
+
   els.dropZone.addEventListener('dragover', () => els.dropZone.classList.add('dragging'));
   els.dropZone.addEventListener('dragleave', () => els.dropZone.classList.remove('dragging'));
   els.dropZone.addEventListener('drop', async event => {
     els.dropZone.classList.remove('dragging');
     const file = event.dataTransfer?.files?.[0];
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.json')) {
-      setImportStatus('That does not look like a .json file.');
+    if (!file) {
+      setImportStatus('Drop failed: no file detected.');
       return;
     }
     await importFile(file);
