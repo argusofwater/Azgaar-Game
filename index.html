@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Azgaar HOI-Lite Campaign Simulator</title>
+  <link rel="stylesheet" href="src/styles.css" />
+</head>
+<body>
+  <div id="importModal" class="modal-backdrop">
+    <div class="modal-card">
+      <h2>Import Azgaar JSON</h2>
+      <p class="muted">Load an Azgaar Data/JSON export, or use the demo map.</p>
+      <div id="dropZone" class="drop-zone">
+        <strong>Drop Azgaar JSON here</strong>
+        <span>or click below to select it manually</span>
+      </div>
+      <input id="azgaarFile" type="file" accept=".json,application/json" hidden />
+      <button id="selectJsonBtn" type="button">Select JSON File</button>
+      <button id="manualImportBtn" type="button">Import Selected File</button>
+      <div id="importStatus" class="tiny">No file selected.</div>
+      <button id="loadDemoBtn" type="button">Load Demo Map</button>
+      <button id="closeImportBtn" type="button">Close</button>
+      <p class="tiny">Azgaar path: Tools → Export → Data/JSON.</p>
+    </div>
+  </div>
+
+  <div id="diplomacyModal" class="modal-backdrop hidden">
+    <div class="modal-card diplomacy-modal-card">
+      <h2 id="diplomacyNationName">Diplomacy</h2>
+      <div id="diplomacyNationDetails" class="muted"></div>
+      <div class="diplomacy-actions">
+        <button id="declareWarBtn">Declare War</button>
+        <button id="offerAllianceBtn">Offer Alliance</button>
+        <button id="makeNeutralBtn">Set Neutral</button>
+        <button id="closeDiplomacyBtn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <header>
+    <h1>Azgaar HOI-Lite Campaign Simulator</h1>
+    <div class="top-stats">Campaign Map</div>
+    <div id="turnDisplay">Turn 1</div>
+  </header>
+
+  <aside class="sidebar">
+    <div class="card command-card">
+      <h2>World Seed</h2>
+      <div id="worldSeedBox" class="seed-box">Unseeded</div>
+      <div id="worldTraitsBox" class="tiny">No world behavior generated yet.</div>
+      <button id="rerollSeedBtn">Reroll World Behavior</button>
+    </div>
+
+    <div class="card command-card">
+      <h2>Command Resources</h2>
+      <div class="resource-grid">
+        <div><span>🪙 Treasury</span><strong id="sideGoldStat">0</strong></div>
+        <div><span>👥 Manpower</span><strong id="sideManpowerStat">0</strong></div>
+        <div><span>⚙️ Industry</span><strong id="sideIndustryStat">0</strong></div>
+        <div><span>⚔️ Army</span><strong id="sideArmyStat">0</strong></div>
+      </div>
+      <button id="openImportBtn">Import / Load Map</button>
+    </div>
+
+    <div class="card"><h3>Your Nation</h3><div id="nationStats"></div></div>
+    <div class="card">
+      <h3>Actions</h3>
+      <button id="buildIndustryBtn">Build Industry</button>
+      <button id="recruitArmyBtn">Recruit Army</button>
+      <button id="attackBtn">Attack Selected Province</button>
+      <button id="endTurnBtn">End Turn</button>
+    </div>
+  </aside>
+
+  <main class="map-wrap">
+    <div id="eventFlash" class="event-flash hidden"></div>
+    <svg id="map" viewBox="0 0 900 600" aria-label="strategy map"></svg>
+    <div class="map-hint">Scroll to zoom • drag to pan • click a province for intel</div>
+    <div id="nationPicker" class="floating-picker">
+      <h3>Choose Nation</h3>
+      <p class="muted">Pick your starting nation.</p>
+      <select id="nationSelect"></select>
+      <button id="chooseNationBtn">Start as Nation</button>
+    </div>
+  </main>
+
+  <aside class="inspector">
+    <div class="card"><h2>Province Intel</h2><div id="provinceInfo" class="muted">Select a province.</div></div>
+    <div class="card"><h3>Nations & Diplomacy</h3><div id="nationList" class="nation-list"></div></div>
+    <div class="card"><h3>War Log</h3><div id="log" class="log"></div></div>
+  </aside>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
