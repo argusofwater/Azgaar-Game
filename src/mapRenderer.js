@@ -18,6 +18,7 @@ export class CanvasMapRenderer {
     this.maxZoom = 5;
     this.worldWidth = 900;
     this.worldHeight = 600;
+    this.worldBounds = { minX: 0, minY: 0, maxX: 900, maxY: 600 };
     this.devicePixelRatio = window.devicePixelRatio || 1;
 
     this.isPanning = false;
@@ -101,6 +102,8 @@ export class CanvasMapRenderer {
 
     if (!points.length) {
       this.worldBounds = { minX: 0, minY: 0, maxX: 900, maxY: 600 };
+      this.worldWidth = 900;
+      this.worldHeight = 600;
       return;
     }
 
@@ -137,10 +140,6 @@ export class CanvasMapRenderer {
     this.offsetX = padding - this.worldBounds.minX * this.zoom;
     this.offsetY = padding - this.worldBounds.minY * this.zoom;
     this.clampCamera();
-  }
-
-  worldToScreen([x, y]) {
-    return [x * this.zoom + this.offsetX, y * this.zoom + this.offsetY];
   }
 
   screenToWorld(x, y) {
@@ -271,21 +270,6 @@ export class CanvasMapRenderer {
     gradient.addColorStop(1, '#07111f');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, rect.width, rect.height);
-
-    ctx.strokeStyle = 'rgba(255,255,255,0.025)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < rect.width; x += 48) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, rect.height);
-      ctx.stroke();
-    }
-    for (let y = 0; y < rect.height; y += 48) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(rect.width, y);
-      ctx.stroke();
-    }
   }
 
   drawProvince(ctx, province, fillColor) {
@@ -304,8 +288,8 @@ export class CanvasMapRenderer {
       }
     } else {
       ctx.beginPath();
-      ctx.roundRect?.(province.x, province.y, province.w, province.h, 18);
-      if (!ctx.roundRect) ctx.rect(province.x, province.y, province.w, province.h);
+      if (ctx.roundRect) ctx.roundRect(province.x, province.y, province.w, province.h, 18);
+      else ctx.rect(province.x, province.y, province.w, province.h);
       ctx.fill();
       ctx.stroke();
     }
