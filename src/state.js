@@ -27,10 +27,10 @@ export function generateWorldBehavior() {
   const b = ['River', 'Crown', 'March', 'Gate', 'Oath', 'Dawn', 'Compact', 'Banner', 'Accord', 'Ember'];
   state.worldSeed = `${pick(a)}-${pick(b)}-${Math.floor(Math.random() * 99999)}`;
   state.worldTraits = {
-    aggression: randomRange(0.28, 0.62),
-    development: randomRange(0.42, 0.86),
-    diplomacy: randomRange(0.12, 0.42),
-    volatility: randomRange(0.20, 0.52)
+    aggression: randomRange(0.38, 0.78),
+    development: randomRange(0.58, 0.92),
+    diplomacy: randomRange(0.18, 0.48),
+    volatility: randomRange(0.28, 0.58)
   };
 }
 
@@ -93,11 +93,11 @@ export function buildIndustry() {
   const nation = state.nations[state.playerNation];
   const cost = getIndustryBuildCost(province);
   if ((nation.treasury ?? 0) < cost) return `Not enough treasury. Building industry costs ${cost}.`;
-  if ((nation.command ?? 0) < 2) return 'Not enough command. Building industry costs 2.';
+  if ((nation.command ?? 0) < 1) return 'Not enough command. Building industry costs 1.';
   nation.treasury -= cost;
-  nation.command -= 2;
+  nation.command -= 1;
   province.industry += 1;
-  addLog(`${province.name} gains +1 industry for ${cost} treasury.`);
+  addLog(`${province.name} gains +1 industry for ${cost} treasury and 1 command.`);
   return true;
 }
 
@@ -161,11 +161,42 @@ export function endTurn() {
     nation.manpower = (nation.manpower ?? 0) + owned.length * 2;
   });
 
+  const diplomacyResults = runAiDiplomacy();
   const aiResults = runAiTurn();
   const eventResults = runWorldEvents();
-  addLog(`Turn ${state.turn} begins. Income collected, armies paid, and the world stirs.`);
+  const actionCount = diplomacyResults.length + aiResults.length + eventResults.length;
+  addLog(`Turn ${state.turn} begins. ${actionCount ? `${actionCount} world actions resolved.` : 'The world watches and waits.'}`);
   cleanupDefeatedNations();
-  return { ok: true, aiResults, eventResults };
+  return { ok: true, aiResults, eventResults, diplomacyResults };
+}
+
+export function runAiDiplomacy() {
+  const results = [];
+  const ids = Object.keys(state.nations).filter(id => id !== state.playerNation);
+  ids.forEach(id => {
+    const owned = state.provinces.filter(p => p.owner === id);
+    if (!owned.length) return;
+    const neighbors = [...new Set(owned.flatMap(p => p.neighbors || []).map(pid => state.provinces.find(p => p.id === pid)?.owner).filter(owner => owner && owner !== id && state.nations[owner]))];
+    if (!neighbors.length) return;
+
+    const currentEnemies = neighbors.filter(other => getRelation(id, other) === 'enemy');
+    if (!currentEnemies.length && Math.random() < (state.worldTraits?.aggression ?? 0.55) * 0.42) {
+      const target = pick(neighbors);
+      declareWarWithAllies(id, target);
+      addLog(`${state.nations[id].name} declares war on ${state.nations[target].name}.`);
+      results.push({ type: 'war', attackerId: id, defenderId: target });
+      return;
+    }
+
+    const neutralNeighbors = neighbors.filter(other => getRelation(id, other) === 'neutral');
+    if (neutralNeighbors.length && Math.random() < (state.worldTraits?.diplomacy ?? 0.25) * 0.20) {
+      const target = pick(neutralNeighbors);
+      setRelation(id, target, 'ally');
+      addLog(`${state.nations[id].name} signs an alliance with ${state.nations[target].name}.`);
+      results.push({ type: 'alliance', nationId: id, targetId: target });
+    }
+  });
+  return results;
 }
 
 export function runAiTurn() {
@@ -174,22 +205,28 @@ export function runAiTurn() {
     const owned = state.provinces.filter(p => p.owner === id);
     if (!owned.length) return;
     const nation = state.nations[id];
-    if ((nation.manpower ?? 0) > 0 && Math.random() < (state.worldTraits?.development ?? 0.55)) {
-      const target = owned.sort((a, b) => a.army - b.army)[0];
-      const amount = Math.min(2, nation.manpower);
+
+    if ((nation.manpower ?? 0) > 0 && Math.random() < (state.worldTraits?.development ?? 0.70)) {
+      const target = owned.slice().sort((a, b) => a.army - b.army)[0];
+      const amount = Math.min(3, nation.manpower);
       nation.manpower -= amount;
       target.army += amount;
       results.push({ type: 'recruit', nationId: id, provinceId: target.id });
     }
-    if ((nation.treasury ?? 0) > 180 && Math.random() < 0.22) {
-      const target = owned.sort((a, b) => a.industry - b.industry)[0];
-      nation.treasury -= 160;
+
+    if ((nation.treasury ?? 0) > 130 && (nation.command ?? 0) > 0 && Math.random() < (state.worldTraits?.development ?? 0.70) * 0.55) {
+      const target = owned.slice().sort((a, b) => a.industry - b.industry)[0];
+      const cost = Math.min(nation.treasury, 120 + target.industry * 35);
+      nation.treasury -= cost;
+      nation.command -= 1;
       target.industry += 1;
+      addLog(`${state.nations[id].name} expands industry in ${target.name}.`);
       results.push({ type: 'build', nationId: id, provinceId: target.id });
     }
-    const borderTargets = state.provinces.filter(p => p.owner !== id && owned.some(o => o.neighbors?.includes(p.id)) && getRelation(id, p.owner) === 'enemy');
-    if (borderTargets.length && Math.random() < (state.worldTraits?.aggression ?? 0.35)) {
-      const target = borderTargets.sort((a, b) => a.army - b.army)[0];
+
+    const enemyTargets = state.provinces.filter(p => p.owner !== id && owned.some(o => o.neighbors?.includes(p.id)) && getRelation(id, p.owner) === 'enemy');
+    if (enemyTargets.length && Math.random() < (state.worldTraits?.aggression ?? 0.55)) {
+      const target = enemyTargets.slice().sort((a, b) => a.army + a.industry - (b.army + b.industry))[0];
       const attacker = owned.filter(p => p.neighbors?.includes(target.id)).sort((a, b) => b.army - a.army)[0];
       if (attacker && attacker.army > target.army + 1) results.push(resolveAttack(attacker, target, id));
     }
@@ -200,14 +237,14 @@ export function runAiTurn() {
 export function runWorldEvents() {
   const results = [];
   const ids = Object.keys(state.nations);
-  const eventCount = Math.max(1, Math.min(5, Math.floor(ids.length / 8) + 1));
+  const eventCount = Math.max(2, Math.min(8, Math.floor(ids.length / 6) + 2));
   for (let i = 0; i < eventCount; i++) {
-    if (Math.random() > (state.worldTraits?.volatility ?? 0.3)) continue;
+    if (Math.random() > (state.worldTraits?.volatility ?? 0.40)) continue;
     const nationId = pick(ids);
     const owned = state.provinces.filter(p => p.owner === nationId);
     if (!nationId || !owned.length) continue;
     const province = pick(owned);
-    if (Math.random() < 0.5) {
+    if (Math.random() < 0.55) {
       province.industry += 1;
       state.nations[nationId].treasury = (state.nations[nationId].treasury ?? 0) + 75;
       addLog(`Trade boom in ${province.name}.`);
