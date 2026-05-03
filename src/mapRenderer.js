@@ -20,7 +20,7 @@ export class CanvasMapRenderer {
     this.dpr = window.devicePixelRatio || 1;
     this.isPanning = false;
     this.panStart = { x: 0, y: 0 };
-    this.lastPointer = { x: 0, y: 0 };
+    this.pointerDownAt = { x: 0, y: 0 };
     this.conquestAnimations = new Map();
 
     this.resize = this.resize.bind(this);
@@ -28,7 +28,7 @@ export class CanvasMapRenderer {
     this.canvas.addEventListener('wheel', e => this.handleWheel(e), { passive: false });
     this.canvas.addEventListener('pointerdown', e => this.handlePointerDown(e));
     window.addEventListener('pointermove', e => this.handlePointerMove(e));
-    window.addEventListener('pointerup', e => this.handlePointerUp(e));
+    window.addEventListener('pointerup', () => this.handlePointerUp());
     this.canvas.addEventListener('click', e => this.handleClick(e));
     window.addEventListener('resize', this.resize);
     this.resize();
@@ -116,6 +116,11 @@ export class CanvasMapRenderer {
     return [(x - this.offsetX) / this.zoom, (y - this.offsetY) / this.zoom];
   }
 
+  getWorldPointFromEvent(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    return this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+  }
+
   handleWheel(e) {
     e.preventDefault();
     const rect = this.canvas.getBoundingClientRect();
@@ -132,14 +137,16 @@ export class CanvasMapRenderer {
   handlePointerDown(e) {
     this.isPanning = true;
     this.panStart = { x: e.clientX - this.offsetX, y: e.clientY - this.offsetY };
-    this.lastPointer = { x: e.clientX, y: e.clientY };
+    this.pointerDownAt = { x: e.clientX, y: e.clientY };
   }
 
   handlePointerMove(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    const [wx, wy] = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const [wx, wy] = this.getWorldPointFromEvent(e);
     const hover = this.pickProvince(wx, wy)?.id || null;
-    if (hover !== this.hoverProvinceId) { this.hoverProvinceId = hover; this.draw(); }
+    if (hover !== this.hoverProvinceId) {
+      this.hoverProvinceId = hover;
+      this.draw();
+    }
     if (!this.isPanning) return;
     this.offsetX = e.clientX - this.panStart.x;
     this.offsetY = e.clientY - this.panStart.y;
@@ -150,10 +157,9 @@ export class CanvasMapRenderer {
   handlePointerUp() { this.isPanning = false; }
 
   handleClick(e) {
-    const moved = Math.abs(e.clientX - this.lastPointer.x) + Math.abs(e.clientY - this.lastPointer.y);
+    const moved = Math.abs(e.clientX - this.pointerDownAt.x) + Math.abs(e.clientY - this.pointerDownAt.y);
     if (moved > 5) return;
-    const rect = this.canvas.getBoundingClientRect();
-    const [wx, wy] = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const [wx, wy] = this.getWorldPointFromEvent(e);
     const province = this.pickProvince(wx, wy);
     if (!province) return;
     this.selectedProvinceId = province.id;
@@ -167,7 +173,9 @@ export class CanvasMapRenderer {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
     const bg = ctx.createLinearGradient(0, 0, rect.width, rect.height);
-    bg.addColorStop(0, '#0b1b33'); bg.addColorStop(0.55, '#12243d'); bg.addColorStop(1, '#07111f');
+    bg.addColorStop(0, '#0b1b33');
+    bg.addColorStop(0.55, '#12243d');
+    bg.addColorStop(1, '#07111f');
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, rect.width, rect.height);
 
@@ -182,7 +190,8 @@ export class CanvasMapRenderer {
       if (anim) {
         const progress = Math.min(1, (now - anim.startedAt) / anim.duration);
         fill = mixHex(anim.fromColor, anim.toColor, progress);
-        if (progress < 1) animating = true; else this.conquestAnimations.delete(p.id);
+        if (progress < 1) animating = true;
+        else this.conquestAnimations.delete(p.id);
       }
       this.drawProvince(ctx, p, fill);
     }
@@ -198,11 +207,16 @@ export class CanvasMapRenderer {
     ctx.strokeStyle = selected ? '#facc15' : hovered ? 'rgba(250,204,21,0.6)' : 'rgba(226,232,240,0.38)';
     ctx.lineWidth = selected ? 2.8 / this.zoom : hovered ? 1.4 / this.zoom : 0.65 / this.zoom;
     if (p.polygons?.length) {
-      p.polygons.forEach(poly => { this.tracePolygon(ctx, poly); ctx.fill(); ctx.stroke(); });
+      p.polygons.forEach(poly => {
+        this.tracePolygon(ctx, poly);
+        ctx.fill();
+        ctx.stroke();
+      });
     } else {
       ctx.beginPath();
       ctx.rect(p.x, p.y, p.w, p.h);
-      ctx.fill(); ctx.stroke();
+      ctx.fill();
+      ctx.stroke();
     }
     ctx.globalAlpha = 1;
   }
@@ -216,13 +230,24 @@ export class CanvasMapRenderer {
 
   pickProvince(x, y) {
     const ctx = this.ctx;
-    for (let i = this.provinces.length - 1; i >= 0; i--) {
-      const p = this.provinces[i];
-      if (p.polygons?.length) {
-        for (const poly of p.polygons) { this.tracePolygon(ctx, poly); if (ctx.isPointInPath(x, y)) return p; }
-      } else if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) return p;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    try {
+      for (let i = this.provinces.length - 1; i >= 0; i--) {
+        const p = this.provinces[i];
+        if (p.polygons?.length) {
+          for (const poly of p.polygons) {
+            this.tracePolygon(ctx, poly);
+            if (ctx.isPointInPath(x, y)) return p;
+          }
+        } else if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) {
+          return p;
+        }
+      }
+      return null;
+    } finally {
+      ctx.restore();
     }
-    return null;
   }
 }
 
@@ -230,6 +255,7 @@ function mixHex(a, b, t) {
   const ca = parseHex(a), cb = parseHex(b);
   return `rgb(${Math.round(ca.r + (cb.r - ca.r) * t)}, ${Math.round(ca.g + (cb.g - ca.g) * t)}, ${Math.round(ca.b + (cb.b - ca.b) * t)})`;
 }
+
 function parseHex(hex) {
   const clean = typeof hex === 'string' ? hex.replace('#', '').trim() : '';
   if (clean.length !== 6) return { r: 107, g: 114, b: 128 };
