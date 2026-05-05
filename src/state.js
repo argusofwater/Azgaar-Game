@@ -39,9 +39,7 @@ export function createNeutralRelations(nations) {
   const table = {};
   ids.forEach(a => {
     table[a] = {};
-    ids.forEach(b => {
-      if (a !== b) table[a][b] = 'neutral';
-    });
+    ids.forEach(b => { if (a !== b) table[a][b] = 'neutral'; });
   });
   return table;
 }
@@ -133,6 +131,8 @@ export function attackProvince() {
 }
 
 function resolveAttack(attacker, target, newOwner) {
+  const fromProvinceId = attacker.id;
+  const toProvinceId = target.id;
   const attackPower = attacker.army + roll(6);
   const defensePower = target.army + target.industry + roll(6);
   if (attackPower > defensePower) {
@@ -142,12 +142,12 @@ function resolveAttack(attacker, target, newOwner) {
     attacker.army = Math.max(1, Math.floor(attacker.army / 2));
     addLog(`${target.name} falls to ${state.nations[newOwner].name}.`);
     cleanupDefeatedNations();
-    return { conquered: true, provinceId: target.id, oldOwner };
+    return { type: 'attack', conquered: true, provinceId: target.id, fromProvinceId, toProvinceId, oldOwner, newOwner };
   }
   attacker.army = Math.max(1, attacker.army - 2);
   target.army = Math.max(1, target.army - 1);
   addLog(`${target.name} holds against the attack.`);
-  return false;
+  return { type: 'attack', conquered: false, fromProvinceId, toProvinceId, attackerOwner: newOwner, defenderOwner: target.owner };
 }
 
 export function endTurn() {
@@ -178,18 +178,16 @@ export function runAiDiplomacy() {
     if (!owned.length) return;
     const neighbors = [...new Set(owned.flatMap(p => p.neighbors || []).map(pid => state.provinces.find(p => p.id === pid)?.owner).filter(owner => owner && owner !== id && state.nations[owner]))];
     if (!neighbors.length) return;
-
     const currentEnemies = neighbors.filter(other => getRelation(id, other) === 'enemy');
-    if (!currentEnemies.length && Math.random() < (state.worldTraits?.aggression ?? 0.55) * 0.42) {
+    if (!currentEnemies.length && Math.random() < (state.worldTraits?.aggression ?? 0.55) * 0.55) {
       const target = pick(neighbors);
       declareWarWithAllies(id, target);
       addLog(`${state.nations[id].name} declares war on ${state.nations[target].name}.`);
       results.push({ type: 'war', attackerId: id, defenderId: target });
       return;
     }
-
     const neutralNeighbors = neighbors.filter(other => getRelation(id, other) === 'neutral');
-    if (neutralNeighbors.length && Math.random() < (state.worldTraits?.diplomacy ?? 0.25) * 0.20) {
+    if (neutralNeighbors.length && Math.random() < (state.worldTraits?.diplomacy ?? 0.25) * 0.12) {
       const target = pick(neutralNeighbors);
       setRelation(id, target, 'ally');
       addLog(`${state.nations[id].name} signs an alliance with ${state.nations[target].name}.`);
@@ -205,7 +203,6 @@ export function runAiTurn() {
     const owned = state.provinces.filter(p => p.owner === id);
     if (!owned.length) return;
     const nation = state.nations[id];
-
     if ((nation.manpower ?? 0) > 0 && Math.random() < (state.worldTraits?.development ?? 0.70)) {
       const target = owned.slice().sort((a, b) => a.army - b.army)[0];
       const amount = Math.min(3, nation.manpower);
@@ -213,7 +210,6 @@ export function runAiTurn() {
       target.army += amount;
       results.push({ type: 'recruit', nationId: id, provinceId: target.id });
     }
-
     if ((nation.treasury ?? 0) > 130 && (nation.command ?? 0) > 0 && Math.random() < (state.worldTraits?.development ?? 0.70) * 0.55) {
       const target = owned.slice().sort((a, b) => a.industry - b.industry)[0];
       const cost = Math.min(nation.treasury, 120 + target.industry * 35);
@@ -223,12 +219,13 @@ export function runAiTurn() {
       addLog(`${state.nations[id].name} expands industry in ${target.name}.`);
       results.push({ type: 'build', nationId: id, provinceId: target.id });
     }
-
     const enemyTargets = state.provinces.filter(p => p.owner !== id && owned.some(o => o.neighbors?.includes(p.id)) && getRelation(id, p.owner) === 'enemy');
-    if (enemyTargets.length && Math.random() < (state.worldTraits?.aggression ?? 0.55)) {
+    const attacksThisTurn = Math.random() < 0.35 ? 2 : 1;
+    for (let i = 0; i < attacksThisTurn; i++) {
+      if (!enemyTargets.length || Math.random() >= (state.worldTraits?.aggression ?? 0.55)) continue;
       const target = enemyTargets.slice().sort((a, b) => a.army + a.industry - (b.army + b.industry))[0];
       const attacker = owned.filter(p => p.neighbors?.includes(target.id)).sort((a, b) => b.army - a.army)[0];
-      if (attacker && attacker.army > target.army + 1) results.push(resolveAttack(attacker, target, id));
+      if (attacker && attacker.army > target.army) results.push(resolveAttack(attacker, target, id));
     }
   });
   return results.filter(Boolean);
