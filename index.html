@@ -86,9 +86,32 @@
   </main>
 
   <aside class="inspector">
-    <div class="card"><h2>Province Intel</h2><div id="provinceInfo" class="muted">Select a province.</div></div>
-    <div class="card"><h3>Nations & Diplomacy</h3><div id="nationList" class="nation-list"></div></div>
-    <div class="card"><h3>War Log</h3><div id="log" class="log"></div></div>
+    <nav class="menu-tabs" aria-label="Command menus">
+      <button class="menu-tab active" data-menu="province">Province</button>
+      <button class="menu-tab" data-menu="nations">Nations</button>
+      <button class="menu-tab" data-menu="diplomacy">Diplomacy</button>
+      <button class="menu-tab" data-menu="log">Log</button>
+    </nav>
+
+    <section class="menu-panel active" data-panel="province">
+      <div class="card"><h2>Province Intel</h2><div id="provinceInfo" class="muted">Select a province.</div></div>
+    </section>
+
+    <section class="menu-panel" data-panel="nations">
+      <div class="card"><h3>Nations</h3><p class="muted">Click a nation to open diplomatic options.</p><div id="nationList" class="nation-list"></div></div>
+    </section>
+
+    <section class="menu-panel" data-panel="diplomacy">
+      <div class="card">
+        <h3>Diplomacy Overview</h3>
+        <div id="diplomacyOverview" class="diplomacy-overview muted">Choose your nation to view diplomatic relations.</div>
+      </div>
+      <div class="card"><h3>Foreign Powers</h3><div id="diplomacyNationList" class="nation-list"></div></div>
+    </section>
+
+    <section class="menu-panel" data-panel="log">
+      <div class="card"><h3>War Log</h3><div id="log" class="log"></div></div>
+    </section>
   </aside>
 
   <script type="module" src="src/main.js"></script>
