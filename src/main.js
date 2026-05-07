@@ -24,6 +24,8 @@ import {
 import { CanvasMapRenderer } from './mapRenderer.js';
 import { importAzgaarFile, loadDemoMap, generateProceduralWorld } from './importer.js';
 
+const LEFT_MENU_ORDER_KEY = 'azgaarHoiLeftMenuOrder';
+
 const els = {
   canvas: document.getElementById('map'),
   importModal: document.getElementById('importModal'),
@@ -67,7 +69,9 @@ const els = {
   eventFlash: document.getElementById('eventFlash'),
   worldSeedBox: document.getElementById('worldSeedBox'),
   worldTraitsBox: document.getElementById('worldTraitsBox'),
-  rerollSeedBtn: document.getElementById('rerollSeedBtn')
+  rerollSeedBtn: document.getElementById('rerollSeedBtn'),
+  leftMenuStack: document.getElementById('leftMenuStack'),
+  resetLeftMenuBtn: document.getElementById('resetLeftMenuBtn')
 };
 
 let selectedDiplomacyNation = null;
@@ -84,6 +88,7 @@ const renderer = new CanvasMapRenderer({
 boot();
 
 function boot() {
+  wireSortableLeftMenu();
   wireImportControls();
   wireNationControls();
   wireActionControls();
@@ -92,6 +97,77 @@ function boot() {
   loadWorld(loadDemoMap(), 'Demo map loaded.');
   addLog('Game initialized. Load an Azgaar JSON, test the demo map, or generate a world.');
   renderUI();
+}
+
+function wireSortableLeftMenu() {
+  if (!els.leftMenuStack) return;
+  applySavedLeftMenuOrder();
+  let dragged = null;
+  let placeholder = null;
+
+  els.leftMenuStack.querySelectorAll('.sortable-card').forEach(card => {
+    card.draggable = true;
+    card.addEventListener('dragstart', event => {
+      dragged = card;
+      placeholder = document.createElement('div');
+      placeholder.className = 'drag-placeholder';
+      card.classList.add('dragging-card');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', card.dataset.menuId || '');
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging-card');
+      placeholder?.remove();
+      placeholder = null;
+      dragged = null;
+      saveLeftMenuOrder();
+    });
+  });
+
+  els.leftMenuStack.addEventListener('dragover', event => {
+    event.preventDefault();
+    if (!dragged || !placeholder) return;
+    const afterElement = getDragAfterElement(els.leftMenuStack, event.clientY);
+    if (!placeholder.parentElement) dragged.after(placeholder);
+    if (afterElement == null) els.leftMenuStack.appendChild(placeholder);
+    else els.leftMenuStack.insertBefore(placeholder, afterElement);
+  });
+
+  els.leftMenuStack.addEventListener('drop', event => {
+    event.preventDefault();
+    if (!dragged || !placeholder?.parentElement) return;
+    els.leftMenuStack.insertBefore(dragged, placeholder);
+  });
+
+  els.resetLeftMenuBtn?.addEventListener('click', () => {
+    localStorage.removeItem(LEFT_MENU_ORDER_KEY);
+    const cards = [...els.leftMenuStack.querySelectorAll('.sortable-card')].sort((a, b) => ['world', 'resources', 'nation', 'actions'].indexOf(a.dataset.menuId) - ['world', 'resources', 'nation', 'actions'].indexOf(b.dataset.menuId));
+    cards.forEach(card => els.leftMenuStack.appendChild(card));
+  });
+}
+
+function applySavedLeftMenuOrder() {
+  const saved = JSON.parse(localStorage.getItem(LEFT_MENU_ORDER_KEY) || '[]');
+  if (!Array.isArray(saved) || !saved.length) return;
+  const cards = new Map([...els.leftMenuStack.querySelectorAll('.sortable-card')].map(card => [card.dataset.menuId, card]));
+  saved.forEach(id => { if (cards.has(id)) els.leftMenuStack.appendChild(cards.get(id)); });
+  [...cards.entries()].filter(([id]) => !saved.includes(id)).forEach(([, card]) => els.leftMenuStack.appendChild(card));
+}
+
+function saveLeftMenuOrder() {
+  if (!els.leftMenuStack) return;
+  const order = [...els.leftMenuStack.querySelectorAll('.sortable-card')].map(card => card.dataset.menuId).filter(Boolean);
+  localStorage.setItem(LEFT_MENU_ORDER_KEY, JSON.stringify(order));
+}
+
+function getDragAfterElement(container, y) {
+  const draggableElements = [...container.querySelectorAll('.sortable-card:not(.dragging-card)')];
+  return draggableElements.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) return { offset, element: child };
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
 }
 
 function wireImportControls() {
@@ -243,7 +319,6 @@ function refreshNationSelect() {
 
 function handleActionResult(result) {
   if (typeof result === 'string') addLog(result);
-  renderer.updateWorld({ nations: state.nations, provinces: state.provinces, selectedProvinceId: state.selectedProvinceId, fronts: state.activeFronts });
   refreshNationSelect();
   renderUI();
 }
