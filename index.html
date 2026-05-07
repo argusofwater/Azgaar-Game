@@ -30,10 +30,10 @@
       <h2 id="diplomacyNationName">Diplomacy</h2>
       <div id="diplomacyNationDetails" class="muted"></div>
       <div class="diplomacy-actions">
-        <button id="declareWarBtn">Declare War</button>
-        <button id="offerAllianceBtn">Offer Alliance</button>
-        <button id="makeNeutralBtn">Set Neutral</button>
-        <button id="closeDiplomacyBtn">Close</button>
+        <button id="declareWarBtn" type="button">Declare War</button>
+        <button id="offerAllianceBtn" type="button">Offer Alliance</button>
+        <button id="makeNeutralBtn" type="button">Set Neutral</button>
+        <button id="closeDiplomacyBtn" type="button">Close</button>
       </div>
     </div>
   </div>
@@ -44,33 +44,39 @@
     <div id="turnDisplay">Turn 1</div>
   </header>
 
-  <aside class="sidebar">
-    <div class="card command-card">
-      <h2>World Seed</h2>
+  <aside class="sidebar compact-stack">
+    <details class="card collapsible" open>
+      <summary>World Seed</summary>
       <div id="worldSeedBox" class="seed-box">Unseeded</div>
       <div id="worldTraitsBox" class="tiny">No world behavior generated yet.</div>
-      <button id="rerollSeedBtn">Reroll World Behavior</button>
-    </div>
+      <button id="rerollSeedBtn" type="button">Reroll World Behavior</button>
+    </details>
 
-    <div class="card command-card">
-      <h2>Command Resources</h2>
+    <details class="card collapsible" open>
+      <summary>Command Resources</summary>
       <div class="resource-grid">
         <div><span>🪙 Treasury</span><strong id="sideGoldStat">0</strong></div>
         <div><span>👥 Manpower</span><strong id="sideManpowerStat">0</strong></div>
         <div><span>⚙️ Industry</span><strong id="sideIndustryStat">0</strong></div>
         <div><span>⚔️ Army</span><strong id="sideArmyStat">0</strong></div>
       </div>
-      <button id="openImportBtn">Import / Load Map</button>
-    </div>
+      <button id="openImportBtn" type="button">Import / Load Map</button>
+    </details>
 
-    <div class="card"><h3>Your Nation</h3><div id="nationStats"></div></div>
-    <div class="card">
-      <h3>Actions</h3>
-      <button id="buildIndustryBtn">Build Industry</button>
-      <button id="recruitArmyBtn">Recruit Army</button>
-      <button id="attackBtn">Attack Selected Province</button>
-      <button id="endTurnBtn">End Turn</button>
-    </div>
+    <details class="card collapsible" open>
+      <summary>Your Nation</summary>
+      <div id="nationStats"></div>
+    </details>
+
+    <details class="card collapsible" open>
+      <summary>Actions</summary>
+      <button id="buildIndustryBtn" type="button">Build Industry</button>
+      <button id="recruitArmyBtn" type="button">Recruit Army</button>
+      <button id="moveArmyBtn" type="button">Reposition Army to Selected Province</button>
+      <button id="attackBtn" type="button">Launch Offensive on Selected Province</button>
+      <button id="endTurnBtn" type="button">End Turn</button>
+      <p class="tiny">Wars now resolve through 30 frontline ticks. Prepare armies before declaring war or the border may eat you alive.</p>
+    </details>
   </aside>
 
   <main class="map-wrap">
@@ -81,37 +87,38 @@
       <h3>Choose Nation</h3>
       <p class="muted">Pick your starting nation.</p>
       <select id="nationSelect"></select>
-      <button id="chooseNationBtn">Start as Nation</button>
+      <button id="chooseNationBtn" type="button">Start as Nation</button>
     </div>
   </main>
 
-  <aside class="inspector">
-    <nav class="menu-tabs" aria-label="Command menus">
-      <button class="menu-tab active" data-menu="province">Province</button>
-      <button class="menu-tab" data-menu="nations">Nations</button>
-      <button class="menu-tab" data-menu="diplomacy">Diplomacy</button>
-      <button class="menu-tab" data-menu="log">Log</button>
-    </nav>
+  <aside class="inspector compact-stack">
+    <details class="card collapsible" open>
+      <summary>Province Intel</summary>
+      <div id="provinceInfo" class="muted">Select a province.</div>
+    </details>
 
-    <section class="menu-panel active" data-panel="province">
-      <div class="card"><h2>Province Intel</h2><div id="provinceInfo" class="muted">Select a province.</div></div>
-    </section>
+    <details class="card collapsible">
+      <summary>Tech Tree</summary>
+      <div id="techSummary" class="muted">Choose your nation to research upgrades.</div>
+      <div id="techTree" class="tech-tree"></div>
+    </details>
 
-    <section class="menu-panel" data-panel="nations">
-      <div class="card"><h3>Nations</h3><p class="muted">Click a nation to open diplomatic options.</p><div id="nationList" class="nation-list"></div></div>
-    </section>
+    <details class="card collapsible">
+      <summary>Nations</summary>
+      <p class="muted">Click a nation row to expand diplomatic and military details.</p>
+      <div id="nationList" class="nation-list"></div>
+    </details>
 
-    <section class="menu-panel" data-panel="diplomacy">
-      <div class="card">
-        <h3>Diplomacy Overview</h3>
-        <div id="diplomacyOverview" class="diplomacy-overview muted">Choose your nation to view diplomatic relations.</div>
-      </div>
-      <div class="card"><h3>Foreign Powers</h3><div id="diplomacyNationList" class="nation-list"></div></div>
-    </section>
+    <details class="card collapsible">
+      <summary>Diplomacy Overview</summary>
+      <div id="diplomacyOverview" class="diplomacy-overview muted">Choose your nation to view diplomatic relations.</div>
+      <div id="diplomacyNationList" class="nation-list"></div>
+    </details>
 
-    <section class="menu-panel" data-panel="log">
-      <div class="card"><h3>War Log</h3><div id="log" class="log"></div></div>
-    </section>
+    <details class="card collapsible" open>
+      <summary>War Log</summary>
+      <div id="log" class="log"></div>
+    </details>
   </aside>
 
   <script type="module" src="src/main.js"></script>
