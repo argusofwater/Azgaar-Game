@@ -36,6 +36,8 @@ export const TECH_TREE = [
   }
 ];
 
+const fallbackColors = ['#2563eb', '#16a34a', '#dc2626', '#7c3aed', '#ea580c', '#0891b2', '#be123c', '#4d7c0f', '#9333ea', '#0f766e', '#b45309', '#4338ca'];
+
 export const state = {
   nations: {},
   provinces: [],
@@ -50,9 +52,10 @@ export const state = {
   activeFronts: []
 };
 
-export function setWorld({ nations, provinces }) {
-  state.nations = nations || {};
-  state.provinces = provinces || [];
+export function setWorld(world = {}) {
+  const normalized = normalizeGameWorld(world);
+  state.nations = normalized.nations;
+  state.provinces = normalized.provinces;
   state.playerNation = null;
   state.selectedProvinceId = state.provinces[0]?.id ?? null;
   state.turn = 1;
@@ -61,6 +64,75 @@ export function setWorld({ nations, provinces }) {
   state.activeFronts = [];
   Object.keys(state.nations).forEach(initNationTech);
   generateWorldBehavior();
+}
+
+export function normalizeGameWorld(world = {}) {
+  const rawNations = world.nations && typeof world.nations === 'object' ? world.nations : {};
+  const rawProvinces = Array.isArray(world.provinces) ? world.provinces : [];
+  const nations = {};
+  let colorIndex = 0;
+
+  Object.entries(rawNations).forEach(([rawId, rawNation]) => {
+    const id = safeId(rawId, `n${colorIndex + 1}`);
+    const n = rawNation && typeof rawNation === 'object' ? rawNation : { name: rawNation };
+    nations[id] = normalizeNation(id, n, colorIndex++);
+  });
+
+  const provinces = rawProvinces
+    .map((rawProvince, index) => normalizeProvince(rawProvince, index, nations))
+    .filter(Boolean);
+
+  for (const province of provinces) {
+    if (!nations[province.owner]) nations[province.owner] = normalizeNation(province.owner, { name: prettifyId(province.owner) }, colorIndex++);
+  }
+
+  const provinceIds = new Set(provinces.map(p => p.id));
+  for (const province of provinces) {
+    province.neighbors = [...new Set((province.neighbors || []).map(id => String(id)).filter(id => id !== province.id && provinceIds.has(id)))];
+  }
+
+  return { nations, provinces };
+}
+
+function normalizeNation(id, nation, index) {
+  const name = stringOr(nation.fullName, nation.name, nation.label, prettifyId(id));
+  return {
+    ...nation,
+    name,
+    color: normalizeColor(nation.color, fallbackColors[index % fallbackColors.length]),
+    treasury: numberOr(nation.treasury, 350),
+    manpower: numberOr(nation.manpower, 60),
+    industry: numberOr(nation.industry, 1),
+    command: numberOr(nation.command, 3),
+    techs: nation.techs && typeof nation.techs === 'object' ? nation.techs : {}
+  };
+}
+
+function normalizeProvince(province, index, nations) {
+  if (!province || typeof province !== 'object') return null;
+  const id = safeId(province.id, `p${province.i ?? index + 1}`);
+  const owner = safeId(province.owner, safeId(province.state ? `s${province.state}` : null, Object.keys(nations)[0] || 'unclaimed'));
+  const x = numberOr(province.x, numberOr(province.labelX, 60 + (index % 10) * 80));
+  const y = numberOr(province.y, numberOr(province.labelY, 60 + Math.floor(index / 10) * 70));
+  return {
+    ...province,
+    id,
+    name: stringOr(province.fullName, province.name, province.label, `Province ${index + 1}`),
+    owner,
+    color: normalizeColor(province.color, null),
+    x,
+    y,
+    labelX: numberOr(province.labelX, x),
+    labelY: numberOr(province.labelY, y),
+    w: numberOr(province.w, 55),
+    h: numberOr(province.h, 45),
+    polygons: Array.isArray(province.polygons) ? province.polygons : [],
+    industry: Math.max(1, Math.round(numberOr(province.industry, 1))),
+    army: Math.max(0, Math.round(numberOr(province.army, 2))),
+    neighbors: Array.isArray(province.neighbors) ? province.neighbors.map(String) : [],
+    disputed: Boolean(province.disputed),
+    disputeBorder: numberOr(province.disputeBorder, 0.5)
+  };
 }
 
 export function generateWorldBehavior() {
@@ -494,6 +566,29 @@ function settleFront(front, results) {
     results.push({ type: 'stalemate', provinceId: to.id, frontId: front.id, border: to.disputeBorder });
   }
   front.finished = true;
+}
+
+function safeId(value, fallback) {
+  const raw = value === undefined || value === null || value === '' ? fallback : value;
+  return String(raw).replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function stringOr(...values) {
+  const found = values.find(value => value !== undefined && value !== null && String(value).trim() !== '');
+  return found === undefined ? 'Unknown' : String(found);
+}
+
+function numberOr(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeColor(color, fallback) {
+  return typeof color === 'string' && color.trim() ? color : fallback;
+}
+
+function prettifyId(id) {
+  return String(id || 'Unknown').replace(/^s/, 'State ').replace(/[_-]+/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
 }
 
 function roll(sides) { return Math.floor(Math.random() * sides) + 1; }
