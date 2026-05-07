@@ -27,53 +27,81 @@ export function loadDemoMap() {
 
 export async function importAzgaarFile(file) {
   const text = await file.text();
-  const data = JSON.parse(text);
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Could not parse JSON: ${error.message}`);
+  }
   return convertAzgaarToGame(data);
 }
 
 export function convertAzgaarToGame(data) {
   const pack = data.pack || data;
-  const statesRaw = Array.isArray(pack.states) ? pack.states.filter(s => s && typeof s === 'object' && !s.removed && s.i !== 0) : [];
-  const provincesRaw = Array.isArray(pack.provinces) ? pack.provinces.filter(p => p && typeof p === 'object' && !p.removed && p.i !== 0) : [];
-  const burgsRaw = Array.isArray(pack.burgs) ? pack.burgs.filter(b => b && typeof b === 'object' && !b.removed && b.i !== 0) : [];
-  const cellsRaw = Array.isArray(pack.cells) ? pack.cells.filter(c => c && typeof c === 'object') : [];
-  const verticesRaw = Array.isArray(pack.vertices) ? pack.vertices.filter(v => v && typeof v === 'object') : [];
+  const statesRaw = normalizeCollection(pack.states).filter(s => s && !s.removed && Number(s.i) !== 0);
+  const provincesRaw = normalizeCollection(pack.provinces).filter(p => p && !p.removed && Number(p.i) !== 0);
+  const burgsRaw = normalizeCollection(pack.burgs).filter(b => b && !b.removed && Number(b.i) !== 0);
+  const cellsRaw = normalizeCollection(pack.cells).filter(c => c && Number.isFinite(Number(c.i)));
+  const verticesRaw = normalizeCollection(pack.vertices).filter(v => v && Number.isFinite(Number(v.i)));
 
-  if (!statesRaw.length) throw new Error('Missing Azgaar states array.');
-  if (!provincesRaw.length) throw new Error('Missing Azgaar provinces array.');
-  if (!cellsRaw.length) throw new Error('Missing Azgaar cells array.');
+  if (!statesRaw.length) throw new Error('Missing Azgaar states. Export with Tools → Export → Data/JSON.');
+  if (!provincesRaw.length) throw new Error('Missing Azgaar provinces. Export with Tools → Export → Data/JSON.');
+  if (!cellsRaw.length) throw new Error('Missing Azgaar cells. This looks like the wrong export type.');
 
-  const mapWidth = data.info?.width || 1875;
-  const mapHeight = data.info?.height || 973;
-  const stateById = new Map(statesRaw.map(s => [s.i, s]));
-  const cellById = new Map(cellsRaw.map(c => [c.i, c]));
-  const vertexById = new Map(verticesRaw.map(v => [v.i, v]));
-  const burgById = new Map(burgsRaw.map(b => [b.i, b]));
+  const mapWidth = data.info?.width || pack.info?.width || data.settings?.width || 1875;
+  const mapHeight = data.info?.height || pack.info?.height || data.settings?.height || 973;
+  const stateById = new Map(statesRaw.map(s => [Number(s.i), s]));
+  const cellById = new Map(cellsRaw.map(c => [Number(c.i), c]));
+  const vertexById = new Map(verticesRaw.map(v => [Number(v.i), v]));
+  const burgById = new Map(burgsRaw.map(b => [Number(b.i), b]));
 
-  const usedStateIds = [...new Set(provincesRaw.map(p => p.state).filter(id => id && stateById.has(id)))];
+  const usedStateIds = [...new Set(provincesRaw.map(p => Number(p.state)).filter(id => id && stateById.has(id)))];
+  if (!usedStateIds.length) throw new Error('No playable states were connected to provinces in this Azgaar file.');
+
   const nations = buildNations(usedStateIds, stateById);
   const cellsByProvince = groupCellsByProvince(cellsRaw);
   const provinces = buildProvinces(provincesRaw, cellsByProvince, cellById, vertexById, burgById, nations, mapWidth, mapHeight);
   assignProvinceNeighbors(provinces, cellsRaw, cellById);
+  ensureFallbackNeighbors(provinces);
 
   if (provinces.length < 2) throw new Error('Not enough playable provinces were created from this Azgaar file.');
   return { nations, provinces };
 }
 
+function normalizeCollection(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.filter(Boolean).map((item, index) => {
+    if (item && typeof item === 'object' && !Array.isArray(item)) return { i: item.i ?? index, ...item };
+    return { i: index, value: item };
+  });
+  if (typeof raw !== 'object') return [];
+
+  const arrayKeys = Object.keys(raw).filter(key => Array.isArray(raw[key]));
+  if (!arrayKeys.length) return Object.values(raw).filter(item => item && typeof item === 'object');
+  const length = Math.max(...arrayKeys.map(key => raw[key].length));
+  const rows = [];
+  for (let i = 0; i < length; i++) {
+    const row = { i };
+    for (const key of arrayKeys) row[key] = raw[key][i];
+    rows.push(row);
+  }
+  return rows;
+}
+
 function buildNations(stateIds, stateById) {
   const nations = {};
   stateIds.forEach((stateId, index) => {
-    const state = stateById.get(stateId);
+    const state = stateById.get(Number(stateId));
     const militaryTotal = Array.isArray(state.military)
       ? state.military.reduce((sum, regiment) => sum + (Number(regiment.a) || 0), 0)
       : 0;
 
     nations[`s${stateId}`] = {
       name: state.fullName || state.name || `State ${stateId}`,
-      color: state.color || colorPool[index % colorPool.length],
-      treasury: Math.max(200, Math.round((state.urban || 0) * 3 + (state.rural || 0) / 10)),
-      manpower: Math.max(20, Math.round((state.rural || 0) / 20 + (state.urban || 0) / 2)),
-      industry: Math.max(1, Math.round((state.urban || 0) / 30) || 1),
+      color: normalizeColor(state.color, colorPool[index % colorPool.length]),
+      treasury: Math.max(200, Math.round((Number(state.urban) || 0) * 3 + (Number(state.rural) || 0) / 10)),
+      manpower: Math.max(20, Math.round((Number(state.rural) || 0) / 20 + (Number(state.urban) || 0) / 2)),
+      industry: Math.max(1, Math.round((Number(state.urban) || 0) / 30) || 1),
       command: Math.max(2, Math.min(10, Math.round((militaryTotal || 1000) / 5000) + 2)),
       diplomacy: state.diplomacy || []
     };
@@ -84,38 +112,41 @@ function buildNations(stateIds, stateById) {
 function groupCellsByProvince(cellsRaw) {
   const cellsByProvince = new Map();
   cellsRaw.forEach(cell => {
-    if (!cell.province) return;
-    if (!cellsByProvince.has(cell.province)) cellsByProvince.set(cell.province, []);
-    cellsByProvince.get(cell.province).push(cell);
+    const provinceId = Number(cell.province);
+    if (!provinceId) return;
+    if (!cellsByProvince.has(provinceId)) cellsByProvince.set(provinceId, []);
+    cellsByProvince.get(provinceId).push(cell);
   });
   return cellsByProvince;
 }
 
 function buildProvinces(provincesRaw, cellsByProvince, cellById, vertexById, burgById, nations, mapWidth, mapHeight) {
   const provinces = provincesRaw
-    .filter(province => province.state && nations[`s${province.state}`])
+    .filter(province => Number(province.state) && nations[`s${Number(province.state)}`])
     .map(province => {
-      const provinceCells = cellsByProvince.get(province.i) || [];
-      const centerCell = cellById.get(province.center) || provinceCells[0];
-      const burg = burgById.get(province.burg);
-      const point = burg ? [burg.x, burg.y] : centerCell?.p || province.pole || [randomInt(80, 820), randomInt(80, 520)];
-      const urban = burg?.population || 0;
+      const provinceId = Number(province.i);
+      const stateId = Number(province.state);
+      const provinceCells = cellsByProvince.get(provinceId) || [];
+      const centerCell = cellById.get(Number(province.center)) || provinceCells[0];
+      const burg = burgById.get(Number(province.burg));
+      const point = getPoint(burg) || getPoint(centerCell) || getPoint(province) || [randomInt(80, 820), randomInt(80, 520)];
+      const urban = Number(burg?.population) || 0;
       const pop = provinceCells.reduce((sum, cell) => sum + (Number(cell.pop) || 0), 0);
       const area = provinceCells.reduce((sum, cell) => sum + (Number(cell.area) || 0), 0);
       const fortBonus = burg?.citadel ? 1 : 0;
       const polygons = provinceCells
-        .map(cell => (Array.isArray(cell.v) ? cell.v : [])
-          .map(vertexId => vertexById.get(vertexId)?.p)
+        .map(cell => getVertexIds(cell)
+          .map(vertexId => getPoint(vertexById.get(Number(vertexId))))
           .filter(point => Array.isArray(point) && point.length >= 2)
         )
         .filter(poly => poly.length >= 3);
 
       return {
-        id: `p${province.i}`,
-        sourceProvinceId: province.i,
-        name: province.fullName || province.name || `Province ${province.i}`,
-        owner: `s${province.state}`,
-        color: province.color,
+        id: `p${provinceId}`,
+        sourceProvinceId: provinceId,
+        name: province.fullName || province.name || `Province ${provinceId}`,
+        owner: `s${stateId}`,
+        color: normalizeColor(province.color, null),
         x: point[0],
         y: point[1],
         labelX: point[0],
@@ -133,16 +164,18 @@ function buildProvinces(provincesRaw, cellsByProvince, cellById, vertexById, bur
 }
 
 function assignProvinceNeighbors(provinces, cellsRaw, cellById) {
-  const provinceIdMap = new Map(provinces.map(p => [p.sourceProvinceId, p.id]));
-  const provinceBySourceId = new Map(provinces.map(p => [p.sourceProvinceId, p]));
+  const provinceIdMap = new Map(provinces.map(p => [Number(p.sourceProvinceId), p.id]));
+  const provinceBySourceId = new Map(provinces.map(p => [Number(p.sourceProvinceId), p]));
 
   cellsRaw.forEach(cell => {
-    if (!cell.province || !provinceIdMap.has(cell.province) || !Array.isArray(cell.c)) return;
-    const from = provinceBySourceId.get(cell.province);
-    cell.c.forEach(neighborCellId => {
-      const neighborCell = cellById.get(neighborCellId);
-      if (!neighborCell?.province || neighborCell.province === cell.province) return;
-      const toId = provinceIdMap.get(neighborCell.province);
+    const sourceProvince = Number(cell.province);
+    if (!sourceProvince || !provinceIdMap.has(sourceProvince)) return;
+    const from = provinceBySourceId.get(sourceProvince);
+    getNeighborCellIds(cell).forEach(neighborCellId => {
+      const neighborCell = cellById.get(Number(neighborCellId));
+      const neighborProvince = Number(neighborCell?.province);
+      if (!neighborProvince || neighborProvince === sourceProvince) return;
+      const toId = provinceIdMap.get(neighborProvince);
       if (from && toId && !from.neighbors.includes(toId)) from.neighbors.push(toId);
     });
   });
@@ -150,9 +183,23 @@ function assignProvinceNeighbors(provinces, cellsRaw, cellById) {
   provinces.forEach(p => delete p.sourceProvinceId);
 }
 
+function ensureFallbackNeighbors(provinces) {
+  const lonely = provinces.filter(p => !p.neighbors?.length);
+  if (!lonely.length || lonely.length !== provinces.length) return;
+  provinces.forEach(province => {
+    const nearest = provinces
+      .filter(other => other.id !== province.id)
+      .map(other => ({ other, distance: distance(province, other) }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 3)
+      .map(item => item.other.id);
+    province.neighbors = nearest;
+  });
+}
+
 function normalizeProvinceLayout(list, sourceWidth = 1875, sourceHeight = 973) {
-  const scaleX = 820 / sourceWidth;
-  const scaleY = 520 / sourceHeight;
+  const scaleX = 820 / Math.max(1, Number(sourceWidth) || 1875);
+  const scaleY = 520 / Math.max(1, Number(sourceHeight) || 973);
   return list.map(p => ({
     ...p,
     x: 40 + p.x * scaleX,
@@ -166,6 +213,36 @@ function normalizeProvinceLayout(list, sourceWidth = 1875, sourceHeight = 973) {
       : [],
     neighbors: p.neighbors || []
   }));
+}
+
+function getPoint(item) {
+  if (!item) return null;
+  if (Array.isArray(item.p) && item.p.length >= 2) return [Number(item.p[0]), Number(item.p[1])];
+  if (Array.isArray(item.pole) && item.pole.length >= 2) return [Number(item.pole[0]), Number(item.pole[1])];
+  if (Number.isFinite(Number(item.x)) && Number.isFinite(Number(item.y))) return [Number(item.x), Number(item.y)];
+  return null;
+}
+
+function getVertexIds(cell) {
+  if (Array.isArray(cell.v)) return cell.v;
+  if (Array.isArray(cell.vertices)) return cell.vertices;
+  return [];
+}
+
+function getNeighborCellIds(cell) {
+  if (Array.isArray(cell.c)) return cell.c;
+  if (Array.isArray(cell.neighbors)) return cell.neighbors;
+  return [];
+}
+
+function normalizeColor(color, fallback) {
+  return typeof color === 'string' && color.trim() ? color : fallback;
+}
+
+function distance(a, b) {
+  const dx = (a.x || 0) - (b.x || 0);
+  const dy = (a.y || 0) - (b.y || 0);
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 function randomInt(min, max) {
