@@ -9,8 +9,8 @@
 <body>
   <div id="importModal" class="modal-backdrop">
     <div class="modal-card">
-      <h2>Import Azgaar JSON</h2>
-      <p class="muted">Load an Azgaar Data/JSON export, or use the demo map.</p>
+      <h2>Import or Generate Map</h2>
+      <p class="muted">Load an Azgaar Data/JSON export, use the demo map, or generate a simple internal world.</p>
       <div id="dropZone" class="drop-zone">
         <strong>Drop Azgaar JSON here</strong>
         <span>or click below to select it manually</span>
@@ -20,6 +20,7 @@
       <button id="manualImportBtn" type="button">Import Selected File</button>
       <div id="importStatus" class="tiny">No file selected.</div>
       <button id="loadDemoBtn" type="button">Load Demo Map</button>
+      <button id="generateWorldBtn" type="button">Generate Procedural World</button>
       <button id="closeImportBtn" type="button">Close</button>
       <p class="tiny">Azgaar path: Tools → Export → Data/JSON.</p>
     </div>
