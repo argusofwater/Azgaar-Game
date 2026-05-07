@@ -7,6 +7,7 @@ export class CanvasMapRenderer {
     this.onProvinceSelected = onProvinceSelected;
     this.nations = {};
     this.provinces = [];
+    this.fronts = [];
     this.selectedProvinceId = null;
     this.hoverProvinceId = null;
     this.zoom = 1;
@@ -34,9 +35,10 @@ export class CanvasMapRenderer {
     this.resize();
   }
 
-  setWorld({ nations, provinces }) {
+  setWorld({ nations, provinces, fronts }) {
     this.nations = nations || {};
     this.provinces = provinces || [];
+    this.fronts = fronts || [];
     this.selectedProvinceId = null;
     this.hoverProvinceId = null;
     this.calculateWorldBounds();
@@ -44,9 +46,10 @@ export class CanvasMapRenderer {
     this.draw();
   }
 
-  updateWorld({ nations, provinces, selectedProvinceId }) {
+  updateWorld({ nations, provinces, selectedProvinceId, fronts }) {
     this.nations = nations || this.nations;
     this.provinces = provinces || this.provinces;
+    this.fronts = fronts || this.fronts;
     this.selectedProvinceId = selectedProvinceId ?? this.selectedProvinceId;
     this.draw();
   }
@@ -58,6 +61,11 @@ export class CanvasMapRenderer {
 
   startConquestAnimation(id, fromColor, toColor) {
     this.conquestAnimations.set(id, { fromColor, toColor, startedAt: performance.now(), duration: 1600 });
+    requestAnimationFrame(this.draw);
+  }
+
+  startFrontPulse(front) {
+    if (!front) return;
     requestAnimationFrame(this.draw);
   }
 
@@ -112,9 +120,7 @@ export class CanvasMapRenderer {
     this.offsetY = this.worldHeight * this.zoom <= r.height ? (r.height - this.worldHeight * this.zoom) / 2 - this.worldBounds.minY * this.zoom : Math.min(maxY, Math.max(minY, this.offsetY));
   }
 
-  screenToWorld(x, y) {
-    return [(x - this.offsetX) / this.zoom, (y - this.offsetY) / this.zoom];
-  }
+  screenToWorld(x, y) { return [(x - this.offsetX) / this.zoom, (y - this.offsetY) / this.zoom]; }
 
   getWorldPointFromEvent(e) {
     const rect = this.canvas.getBoundingClientRect();
@@ -195,8 +201,9 @@ export class CanvasMapRenderer {
       }
       this.drawProvince(ctx, p, fill);
     }
+    this.drawFronts(ctx, now);
     ctx.restore();
-    if (animating) requestAnimationFrame(this.draw);
+    if (animating || this.fronts.length) requestAnimationFrame(this.draw);
   }
 
   drawProvince(ctx, p, fill) {
@@ -219,6 +226,70 @@ export class CanvasMapRenderer {
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+    if (p.disputed) this.drawDisputedOverlay(ctx, p);
+  }
+
+  drawDisputedOverlay(ctx, p) {
+    const center = getProvinceCenter(p);
+    const radius = Math.max(8, Math.min(22, Math.sqrt(getProvinceArea(p)) * 0.12));
+    ctx.save();
+    ctx.globalAlpha = 0.82;
+    ctx.strokeStyle = '#f97316';
+    ctx.lineWidth = 2.2 / this.zoom;
+    ctx.setLineDash([5 / this.zoom, 4 / this.zoom]);
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawFronts(ctx, now) {
+    for (const front of this.fronts || []) {
+      const from = this.provinces.find(p => p.id === front.fromProvinceId);
+      const to = this.provinces.find(p => p.id === front.toProvinceId);
+      if (!from || !to) continue;
+      const a = getProvinceCenter(from);
+      const b = getProvinceCenter(to);
+      const pulse = 0.5 + Math.sin(now / 130 + front.tick) * 0.5;
+      const border = typeof front.border === 'number' ? front.border : 0.5;
+      const mid = { x: a.x + (b.x - a.x) * border, y: a.y + (b.y - a.y) * border };
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = 'rgba(248, 113, 113, 0.78)';
+      ctx.lineWidth = (2.6 + pulse) / this.zoom;
+      ctx.setLineDash([8 / this.zoom, 5 / this.zoom]);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      this.drawPixelArmy(ctx, a.x + (mid.x - a.x) * 0.72, a.y + (mid.y - a.y) * 0.72, this.nations[front.attackerOwner]?.color || '#facc15', pulse, true);
+      this.drawPixelArmy(ctx, b.x + (mid.x - b.x) * 0.72, b.y + (mid.y - b.y) * 0.72, this.nations[front.defenderOwner]?.color || '#93c5fd', pulse, false);
+      ctx.fillStyle = 'rgba(2, 6, 23, 0.86)';
+      ctx.strokeStyle = '#f97316';
+      ctx.lineWidth = 1.2 / this.zoom;
+      ctx.beginPath();
+      ctx.arc(mid.x, mid.y, (4 + pulse * 2) / this.zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  drawPixelArmy(ctx, x, y, color, pulse, facingRight) {
+    const s = 4 / this.zoom;
+    const dir = facingRight ? 1 : -1;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = 'rgba(2, 6, 23, 0.9)';
+    ctx.lineWidth = 0.8 / this.zoom;
+    for (let i = 0; i < 4; i++) {
+      const px = x + dir * (i * s * 1.8 + pulse * s * 0.6);
+      const py = y + ((i % 2) ? s * 1.3 : -s * 1.3);
+      ctx.fillRect(px - s, py - s, s * 2, s * 2);
+      ctx.strokeRect(px - s, py - s, s * 2, s * 2);
+    }
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(x + dir * s * 6, y - s * 0.45, dir * s * 4, s * 0.9);
   }
 
   tracePolygon(ctx, poly) {
@@ -249,6 +320,21 @@ export class CanvasMapRenderer {
       ctx.restore();
     }
   }
+}
+
+function getProvinceCenter(p) {
+  if (p.polygons?.length) {
+    const pts = p.polygons.flat();
+    return { x: pts.reduce((sum, point) => sum + point[0], 0) / pts.length, y: pts.reduce((sum, point) => sum + point[1], 0) / pts.length };
+  }
+  return { x: p.x + p.w / 2, y: p.y + p.h / 2 };
+}
+
+function getProvinceArea(p) {
+  if (!p.polygons?.length) return (p.w || 20) * (p.h || 20);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  p.polygons.flat().forEach(([x, y]) => { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); });
+  return Math.max(1, (maxX - minX) * (maxY - minY));
 }
 
 function mixHex(a, b, t) {
