@@ -23,9 +23,12 @@ export class CanvasMapRenderer {
     this.panStart = { x: 0, y: 0 };
     this.pointerDownAt = { x: 0, y: 0 };
     this.conquestAnimations = new Map();
+    this.drawQueued = false;
+    this.animationFrame = null;
 
     this.resize = this.resize.bind(this);
     this.draw = this.draw.bind(this);
+    this.queueDraw = this.queueDraw.bind(this);
     this.canvas.addEventListener('wheel', e => this.handleWheel(e), { passive: false });
     this.canvas.addEventListener('pointerdown', e => this.handlePointerDown(e));
     window.addEventListener('pointermove', e => this.handlePointerMove(e));
@@ -43,7 +46,7 @@ export class CanvasMapRenderer {
     this.hoverProvinceId = null;
     this.calculateWorldBounds();
     this.fitToView();
-    this.draw();
+    this.queueDraw();
   }
 
   updateWorld({ nations, provinces, selectedProvinceId, fronts }) {
@@ -51,33 +54,39 @@ export class CanvasMapRenderer {
     this.provinces = provinces || this.provinces;
     this.fronts = fronts || this.fronts;
     this.selectedProvinceId = selectedProvinceId ?? this.selectedProvinceId;
-    this.draw();
+    this.queueDraw();
   }
 
   selectProvince(id) {
     this.selectedProvinceId = id;
-    this.draw();
+    this.queueDraw();
   }
 
   startConquestAnimation(id, fromColor, toColor) {
     this.conquestAnimations.set(id, { fromColor, toColor, startedAt: performance.now(), duration: 1600 });
-    requestAnimationFrame(this.draw);
+    this.queueDraw(true);
   }
 
   startFrontPulse(front) {
     if (!front) return;
-    requestAnimationFrame(this.draw);
+    this.queueDraw(true);
+  }
+
+  queueDraw(forceAnimation = false) {
+    if (this.drawQueued && !forceAnimation) return;
+    this.drawQueued = true;
+    if (!this.animationFrame) this.animationFrame = requestAnimationFrame(this.draw);
   }
 
   resize() {
     const rect = this.container.getBoundingClientRect();
-    this.dpr = window.devicePixelRatio || 1;
+    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.canvas.width = Math.max(1, Math.floor(rect.width * this.dpr));
     this.canvas.height = Math.max(1, Math.floor(rect.height * this.dpr));
     this.canvas.style.width = `${rect.width}px`;
     this.canvas.style.height = `${rect.height}px`;
     this.clampCamera();
-    this.draw();
+    this.queueDraw();
   }
 
   calculateWorldBounds() {
@@ -137,7 +146,7 @@ export class CanvasMapRenderer {
     this.offsetX = mx - before[0] * this.zoom;
     this.offsetY = my - before[1] * this.zoom;
     this.clampCamera();
-    this.draw();
+    this.queueDraw();
   }
 
   handlePointerDown(e) {
@@ -151,13 +160,13 @@ export class CanvasMapRenderer {
     const hover = this.pickProvince(wx, wy)?.id || null;
     if (hover !== this.hoverProvinceId) {
       this.hoverProvinceId = hover;
-      this.draw();
+      this.queueDraw();
     }
     if (!this.isPanning) return;
     this.offsetX = e.clientX - this.panStart.x;
     this.offsetY = e.clientY - this.panStart.y;
     this.clampCamera();
-    this.draw();
+    this.queueDraw();
   }
 
   handlePointerUp() { this.isPanning = false; }
@@ -170,10 +179,12 @@ export class CanvasMapRenderer {
     if (!province) return;
     this.selectedProvinceId = province.id;
     this.onProvinceSelected?.(province);
-    this.draw();
+    this.queueDraw();
   }
 
   draw() {
+    this.drawQueued = false;
+    this.animationFrame = null;
     const ctx = this.ctx;
     const rect = this.container.getBoundingClientRect();
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -203,7 +214,7 @@ export class CanvasMapRenderer {
     }
     this.drawFronts(ctx, now);
     ctx.restore();
-    if (animating || this.fronts.length) requestAnimationFrame(this.draw);
+    if (animating || this.fronts.length) this.queueDraw(true);
   }
 
   drawProvince(ctx, p, fill) {
