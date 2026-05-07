@@ -46,38 +46,45 @@
   </header>
 
   <aside class="sidebar compact-stack">
-    <details class="card collapsible" open>
-      <summary>World Seed</summary>
-      <div id="worldSeedBox" class="seed-box">Unseeded</div>
-      <div id="worldTraitsBox" class="tiny">No world behavior generated yet.</div>
-      <button id="rerollSeedBtn" type="button">Reroll World Behavior</button>
-    </details>
+    <div class="left-menu-toolbar">
+      <strong>Command Menus</strong>
+      <button id="resetLeftMenuBtn" type="button">Reset Order</button>
+    </div>
 
-    <details class="card collapsible" open>
-      <summary>Command Resources</summary>
-      <div class="resource-grid">
-        <div><span>🪙 Treasury</span><strong id="sideGoldStat">0</strong></div>
-        <div><span>👥 Manpower</span><strong id="sideManpowerStat">0</strong></div>
-        <div><span>⚙️ Industry</span><strong id="sideIndustryStat">0</strong></div>
-        <div><span>⚔️ Army</span><strong id="sideArmyStat">0</strong></div>
-      </div>
-      <button id="openImportBtn" type="button">Import / Load Map</button>
-    </details>
+    <div id="leftMenuStack" class="sortable-menu-stack">
+      <details class="card collapsible sortable-card" data-menu-id="world" open>
+        <summary><span class="drag-handle" title="Drag to reorder">☰</span><span>World Seed</span></summary>
+        <div id="worldSeedBox" class="seed-box">Unseeded</div>
+        <div id="worldTraitsBox" class="tiny">No world behavior generated yet.</div>
+        <button id="rerollSeedBtn" type="button">Reroll World Behavior</button>
+      </details>
 
-    <details class="card collapsible" open>
-      <summary>Your Nation</summary>
-      <div id="nationStats"></div>
-    </details>
+      <details class="card collapsible sortable-card" data-menu-id="resources" open>
+        <summary><span class="drag-handle" title="Drag to reorder">☰</span><span>Command Resources</span></summary>
+        <div class="resource-grid">
+          <div><span>🪙 Treasury</span><strong id="sideGoldStat">0</strong></div>
+          <div><span>👥 Manpower</span><strong id="sideManpowerStat">0</strong></div>
+          <div><span>⚙️ Industry</span><strong id="sideIndustryStat">0</strong></div>
+          <div><span>⚔️ Army</span><strong id="sideArmyStat">0</strong></div>
+        </div>
+        <button id="openImportBtn" type="button">Import / Load Map</button>
+      </details>
 
-    <details class="card collapsible" open>
-      <summary>Actions</summary>
-      <button id="buildIndustryBtn" type="button">Build Industry</button>
-      <button id="recruitArmyBtn" type="button">Recruit Army</button>
-      <button id="moveArmyBtn" type="button">Reposition Army to Selected Province</button>
-      <button id="attackBtn" type="button">Launch Offensive on Selected Province</button>
-      <button id="endTurnBtn" type="button">End Turn</button>
-      <p class="tiny">Wars now resolve through 30 frontline ticks. Prepare armies before declaring war or the border may eat you alive.</p>
-    </details>
+      <details class="card collapsible sortable-card" data-menu-id="nation" open>
+        <summary><span class="drag-handle" title="Drag to reorder">☰</span><span>Your Nation</span></summary>
+        <div id="nationStats"></div>
+      </details>
+
+      <details class="card collapsible sortable-card" data-menu-id="actions" open>
+        <summary><span class="drag-handle" title="Drag to reorder">☰</span><span>Actions</span></summary>
+        <button id="buildIndustryBtn" type="button">Build Industry</button>
+        <button id="recruitArmyBtn" type="button">Recruit Army</button>
+        <button id="moveArmyBtn" type="button">Reposition Army to Selected Province</button>
+        <button id="attackBtn" type="button">Launch Offensive on Selected Province</button>
+        <button id="endTurnBtn" type="button">End Turn</button>
+        <p class="tiny">Wars resolve through 30 frontline ticks. Prepare armies before declaring war or the border may eat you alive.</p>
+      </details>
+    </div>
   </aside>
 
   <main class="map-wrap">
