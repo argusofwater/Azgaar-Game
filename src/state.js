@@ -114,6 +114,7 @@ function normalizeProvince(province, index, nations) {
   const owner = safeId(province.owner, safeId(province.state ? `s${province.state}` : null, Object.keys(nations)[0] || 'unclaimed'));
   const x = numberOr(province.x, numberOr(province.labelX, 60 + (index % 10) * 80));
   const y = numberOr(province.y, numberOr(province.labelY, 60 + Math.floor(index / 10) * 70));
+  const defenseBonus = Math.max(0, Math.round(numberOr(province.defenseBonus, 0)));
   return {
     ...province,
     id,
@@ -129,6 +130,10 @@ function normalizeProvince(province, index, nations) {
     polygons: Array.isArray(province.polygons) ? province.polygons : [],
     industry: Math.max(1, Math.round(numberOr(province.industry, 1))),
     army: Math.max(0, Math.round(numberOr(province.army, 2))),
+    terrain: stringOr(province.terrain, 'plains'),
+    mountainScore: Math.max(0, Math.round(numberOr(province.mountainScore, 0))),
+    defenseBonus,
+    mountainIcons: Array.isArray(province.mountainIcons) ? province.mountainIcons : [],
     neighbors: Array.isArray(province.neighbors) ? province.neighbors.map(String) : [],
     disputed: Boolean(province.disputed),
     disputeBorder: numberOr(province.disputeBorder, 0.5)
@@ -425,7 +430,7 @@ export function runAiTurn() {
     const attacksThisTurn = Math.random() < 0.35 ? 2 : 1;
     for (let i = 0; i < attacksThisTurn; i++) {
       if (!enemyTargets.length || Math.random() >= (state.worldTraits?.aggression ?? 0.55)) continue;
-      const target = enemyTargets.slice().sort((a, b) => a.army + a.industry - (b.army + b.industry))[0];
+      const target = enemyTargets.slice().sort((a, b) => a.army + a.industry - (b.army + b.industry + getProvinceDefenseValue(b)))[0];
       const attacker = owned.filter(p => p.neighbors?.includes(target.id)).sort((a, b) => b.army - a.army)[0];
       if (attacker && attacker.army > 1) {
         const front = createFront(attacker.id, target.id, id, target.owner, 'ai offensive');
@@ -502,6 +507,9 @@ function createFront(fromProvinceId, toProvinceId, attackerOwner, defenderOwner,
     toProvinceId,
     attackerOwner,
     defenderOwner,
+    attackerStrength: from.army,
+    defenderStrength: to.army,
+    terrainDefense: getProvinceDefenseValue(to),
     tick: 0,
     momentum: 0,
     border: 0.5,
@@ -522,11 +530,15 @@ function tickFront(front, results) {
   front.tick += 1;
   const attackerTech = getTechEffects(front.attackerOwner);
   const defenderTech = getTechEffects(front.defenderOwner);
+  const terrainDefense = getProvinceDefenseValue(to);
   const attackScore = from.army + attackerTech.attackBonus + attackerTech.sustainBonus + attackerTech.pushBonus + roll(6);
-  const defenseScore = to.army + to.industry + defenderTech.defenseBonus + Math.ceil(defenderTech.sustainBonus / 2) + roll(6);
+  const defenseScore = to.army + to.industry + terrainDefense + defenderTech.defenseBonus + Math.ceil(defenderTech.sustainBonus / 2) + roll(6);
   const delta = Math.max(-5, Math.min(5, attackScore - defenseScore));
   front.momentum += delta;
   front.border = Math.max(0.08, Math.min(0.92, front.border + delta * 0.018));
+  front.attackerStrength = from.army;
+  front.defenderStrength = to.army;
+  front.terrainDefense = terrainDefense;
   if (front.tick % 6 === 0) {
     if (delta > 0) to.army = Math.max(0, to.army - 1);
     if (delta < 0) from.army = Math.max(1, from.army - 1);
@@ -566,6 +578,10 @@ function settleFront(front, results) {
     results.push({ type: 'stalemate', provinceId: to.id, frontId: front.id, border: to.disputeBorder });
   }
   front.finished = true;
+}
+
+function getProvinceDefenseValue(province) {
+  return Math.max(0, Math.round(numberOr(province?.defenseBonus, 0)));
 }
 
 function safeId(value, fallback) {
