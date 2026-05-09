@@ -57,20 +57,14 @@ export class CanvasMapRenderer {
     this.queueDraw();
   }
 
-  selectProvince(id) {
-    this.selectedProvinceId = id;
-    this.queueDraw();
-  }
+  selectProvince(id) { this.selectedProvinceId = id; this.queueDraw(); }
 
   startConquestAnimation(id, fromColor, toColor) {
     this.conquestAnimations.set(id, { fromColor, toColor, startedAt: performance.now(), duration: 1600 });
     this.queueDraw(true);
   }
 
-  startFrontPulse(front) {
-    if (!front) return;
-    this.queueDraw(true);
-  }
+  startFrontPulse(front) { if (front) this.queueDraw(true); }
 
   queueDraw(forceAnimation = false) {
     if (this.drawQueued && !forceAnimation) return;
@@ -212,6 +206,7 @@ export class CanvasMapRenderer {
       }
       this.drawProvince(ctx, p, fill);
     }
+    this.drawTerrainIcons(ctx);
     this.drawFronts(ctx, now);
     ctx.restore();
     if (animating || this.fronts.length) this.queueDraw(true);
@@ -240,6 +235,42 @@ export class CanvasMapRenderer {
     if (p.disputed) this.drawDisputedOverlay(ctx, p);
   }
 
+  drawTerrainIcons(ctx) {
+    for (const p of this.provinces) {
+      if (!p.mountainIcons?.length || (p.defenseBonus || 0) <= 0) continue;
+      const icons = p.mountainIcons.slice(0, 3);
+      icons.forEach((point, index) => this.drawMountainIcon(ctx, point.x, point.y, p.defenseBonus, index));
+    }
+  }
+
+  drawMountainIcon(ctx, x, y, defenseBonus, index = 0) {
+    const size = (defenseBonus >= 2 ? 13 : 10) / this.zoom;
+    const ox = (index % 2) * size * 0.8;
+    const oy = Math.floor(index / 2) * size * 0.65;
+    ctx.save();
+    ctx.globalAlpha = 0.88;
+    ctx.fillStyle = 'rgba(226, 232, 240, 0.88)';
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.95)';
+    ctx.lineWidth = 1.2 / this.zoom;
+    ctx.beginPath();
+    ctx.moveTo(x + ox, y + oy - size);
+    ctx.lineTo(x + ox - size, y + oy + size * 0.8);
+    ctx.lineTo(x + ox + size, y + oy + size * 0.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    if (defenseBonus >= 2) {
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.92)';
+      ctx.beginPath();
+      ctx.moveTo(x + ox + size * 0.22, y + oy - size * 0.34);
+      ctx.lineTo(x + ox - size * 0.18, y + oy + size * 0.8);
+      ctx.lineTo(x + ox + size, y + oy + size * 0.8);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   drawDisputedOverlay(ctx, p) {
     const center = getProvinceCenter(p);
     const radius = Math.max(8, Math.min(22, Math.sqrt(getProvinceArea(p)) * 0.12));
@@ -263,44 +294,68 @@ export class CanvasMapRenderer {
       const b = getProvinceCenter(to);
       const pulse = 0.5 + Math.sin(now / 130 + front.tick) * 0.5;
       const border = typeof front.border === 'number' ? front.border : 0.5;
-      const mid = { x: a.x + (b.x - a.x) * border, y: a.y + (b.y - a.y) * border };
+      const wiggle = Math.sin(now / 95 + front.momentum * 0.3) * 0.035;
+      const animatedBorder = Math.max(0.06, Math.min(0.94, border + wiggle));
+      const mid = { x: a.x + (b.x - a.x) * animatedBorder, y: a.y + (b.y - a.y) * animatedBorder };
+      const angle = Math.atan2(b.y - a.y, b.x - a.x);
+      const normal = { x: -Math.sin(angle), y: Math.cos(angle) };
+      const attackerColor = this.nations[front.attackerOwner]?.color || '#facc15';
+      const defenderColor = this.nations[front.defenderOwner]?.color || '#93c5fd';
       ctx.save();
-      ctx.globalAlpha = 0.9;
-      ctx.strokeStyle = 'rgba(248, 113, 113, 0.78)';
-      ctx.lineWidth = (2.6 + pulse) / this.zoom;
-      ctx.setLineDash([8 / this.zoom, 5 / this.zoom]);
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      this.drawPixelArmy(ctx, a.x + (mid.x - a.x) * 0.72, a.y + (mid.y - a.y) * 0.72, this.nations[front.attackerOwner]?.color || '#facc15', pulse, true);
-      this.drawPixelArmy(ctx, b.x + (mid.x - b.x) * 0.72, b.y + (mid.y - b.y) * 0.72, this.nations[front.defenderOwner]?.color || '#93c5fd', pulse, false);
-      ctx.fillStyle = 'rgba(2, 6, 23, 0.86)';
-      ctx.strokeStyle = '#f97316';
-      ctx.lineWidth = 1.2 / this.zoom;
-      ctx.beginPath();
-      ctx.arc(mid.x, mid.y, (4 + pulse * 2) / this.zoom, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+      ctx.globalAlpha = 0.96;
+      this.drawPixelBorder(ctx, mid, angle, normal, attackerColor, defenderColor, pulse, now);
+      this.drawFrontStrength(ctx, mid.x + normal.x * 18 / this.zoom, mid.y + normal.y * 18 / this.zoom, front.attackerStrength ?? from.army, attackerColor);
+      this.drawFrontStrength(ctx, mid.x - normal.x * 18 / this.zoom, mid.y - normal.y * 18 / this.zoom, front.defenderStrength ?? to.army, defenderColor, front.terrainDefense || to.defenseBonus || 0);
       ctx.restore();
     }
   }
 
-  drawPixelArmy(ctx, x, y, color, pulse, facingRight) {
-    const s = 4 / this.zoom;
-    const dir = facingRight ? 1 : -1;
-    ctx.fillStyle = color;
-    ctx.strokeStyle = 'rgba(2, 6, 23, 0.9)';
-    ctx.lineWidth = 0.8 / this.zoom;
-    for (let i = 0; i < 4; i++) {
-      const px = x + dir * (i * s * 1.8 + pulse * s * 0.6);
-      const py = y + ((i % 2) ? s * 1.3 : -s * 1.3);
-      ctx.fillRect(px - s, py - s, s * 2, s * 2);
-      ctx.strokeRect(px - s, py - s, s * 2, s * 2);
+  drawPixelBorder(ctx, mid, angle, normal, attackerColor, defenderColor, pulse, now) {
+    const segmentCount = 11;
+    const spacing = 5.5 / this.zoom;
+    const pixel = 3.4 / this.zoom;
+    const tangent = { x: Math.cos(angle), y: Math.sin(angle) };
+    for (let i = 0; i < segmentCount; i++) {
+      const centered = i - (segmentCount - 1) / 2;
+      const wave = Math.sin(now / 80 + i * 0.85) * 2.4 / this.zoom;
+      const side = i % 2 === 0 ? 1 : -1;
+      const x = mid.x + tangent.x * centered * spacing + normal.x * wave;
+      const y = mid.y + tangent.y * centered * spacing + normal.y * wave;
+      ctx.fillStyle = side > 0 ? attackerColor : defenderColor;
+      ctx.strokeStyle = 'rgba(2, 6, 23, 0.95)';
+      ctx.lineWidth = 0.8 / this.zoom;
+      ctx.fillRect(x - pixel / 2, y - pixel / 2, pixel, pixel);
+      ctx.strokeRect(x - pixel / 2, y - pixel / 2, pixel, pixel);
     }
+    ctx.strokeStyle = 'rgba(248, 113, 113, 0.76)';
+    ctx.lineWidth = (1.6 + pulse) / this.zoom;
+    ctx.setLineDash([7 / this.zoom, 5 / this.zoom]);
+    ctx.beginPath();
+    ctx.moveTo(mid.x - tangent.x * 36 / this.zoom, mid.y - tangent.y * 36 / this.zoom);
+    ctx.lineTo(mid.x + tangent.x * 36 / this.zoom, mid.y + tangent.y * 36 / this.zoom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  drawFrontStrength(ctx, x, y, strength, color, defenseBonus = 0) {
+    const label = defenseBonus > 0 ? `${strength}+${defenseBonus}` : `${strength}`;
+    const fontSize = 12 / this.zoom;
+    ctx.save();
+    ctx.font = `800 ${fontSize}px system-ui, sans-serif`;
+    const metrics = ctx.measureText(label);
+    const w = metrics.width + 9 / this.zoom;
+    const h = 15 / this.zoom;
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.86)';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.4 / this.zoom;
+    roundRect(ctx, x - w / 2, y - h / 2, w, h, 4 / this.zoom);
+    ctx.fill();
+    ctx.stroke();
     ctx.fillStyle = '#f8fafc';
-    ctx.fillRect(x + dir * s * 6, y - s * 0.45, dir * s * 4, s * 0.9);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, x, y + 0.5 / this.zoom);
+    ctx.restore();
   }
 
   tracePolygon(ctx, poly) {
@@ -346,6 +401,17 @@ function getProvinceArea(p) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   p.polygons.flat().forEach(([x, y]) => { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); });
   return Math.max(1, (maxX - minX) * (maxY - minY));
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
 }
 
 function mixHex(a, b, t) {
