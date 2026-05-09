@@ -12,15 +12,15 @@ export function loadDemoMap() {
       dusk: { name: 'Dusk League', color: '#7c3aed', treasury: 350, manpower: 60, industry: 6, command: 3 }
     },
     provinces: [
-      { id: 'p1', name: 'Northwatch', owner: 'aegis', x: 60, y: 70, w: 210, h: 150, industry: 2, army: 6, neighbors: ['p2', 'p4'], polygons: [] },
-      { id: 'p2', name: 'Ironford', owner: 'aegis', x: 270, y: 70, w: 170, h: 150, industry: 2, army: 5, neighbors: ['p1', 'p3', 'p5'], polygons: [] },
-      { id: 'p3', name: 'Ashenfield', owner: 'ember', x: 440, y: 70, w: 210, h: 150, industry: 3, army: 7, neighbors: ['p2', 'p6'], polygons: [] },
-      { id: 'p4', name: 'Greenmere', owner: 'thorn', x: 60, y: 220, w: 210, h: 160, industry: 1, army: 8, neighbors: ['p1', 'p5', 'p7'], polygons: [] },
-      { id: 'p5', name: 'Kingsroad', owner: 'thorn', x: 270, y: 220, w: 170, h: 160, industry: 2, army: 6, neighbors: ['p2', 'p4', 'p6', 'p8'], polygons: [] },
-      { id: 'p6', name: 'Cindervale', owner: 'ember', x: 440, y: 220, w: 210, h: 160, industry: 2, army: 9, neighbors: ['p3', 'p5', 'p9'], polygons: [] },
-      { id: 'p7', name: 'Moonfen', owner: 'dusk', x: 60, y: 380, w: 210, h: 150, industry: 2, army: 4, neighbors: ['p4', 'p8'], polygons: [] },
-      { id: 'p8', name: 'Violet Gate', owner: 'dusk', x: 270, y: 380, w: 170, h: 150, industry: 3, army: 5, neighbors: ['p5', 'p7', 'p9'], polygons: [] },
-      { id: 'p9', name: 'Starfall', owner: 'ember', x: 440, y: 380, w: 210, h: 150, industry: 1, army: 6, neighbors: ['p6', 'p8'], polygons: [] }
+      { id: 'p1', name: 'Northwatch', owner: 'aegis', x: 60, y: 70, w: 210, h: 150, industry: 2, army: 6, terrain: 'hills', mountainScore: 42, defenseBonus: 1, mountainIcons: [{ x: 150, y: 120 }], neighbors: ['p2', 'p4'], polygons: [] },
+      { id: 'p2', name: 'Ironford', owner: 'aegis', x: 270, y: 70, w: 170, h: 150, industry: 2, army: 5, terrain: 'plains', mountainScore: 8, defenseBonus: 0, mountainIcons: [], neighbors: ['p1', 'p3', 'p5'], polygons: [] },
+      { id: 'p3', name: 'Ashenfield', owner: 'ember', x: 440, y: 70, w: 210, h: 150, industry: 3, army: 7, terrain: 'mountains', mountainScore: 74, defenseBonus: 2, mountainIcons: [{ x: 535, y: 124 }, { x: 580, y: 160 }], neighbors: ['p2', 'p6'], polygons: [] },
+      { id: 'p4', name: 'Greenmere', owner: 'thorn', x: 60, y: 220, w: 210, h: 160, industry: 1, army: 8, terrain: 'plains', mountainScore: 10, defenseBonus: 0, mountainIcons: [], neighbors: ['p1', 'p5', 'p7'], polygons: [] },
+      { id: 'p5', name: 'Kingsroad', owner: 'thorn', x: 270, y: 220, w: 170, h: 160, industry: 2, army: 6, terrain: 'hills', mountainScore: 35, defenseBonus: 1, mountainIcons: [{ x: 350, y: 295 }], neighbors: ['p2', 'p4', 'p6', 'p8'], polygons: [] },
+      { id: 'p6', name: 'Cindervale', owner: 'ember', x: 440, y: 220, w: 210, h: 160, industry: 2, army: 9, terrain: 'plains', mountainScore: 12, defenseBonus: 0, mountainIcons: [], neighbors: ['p3', 'p5', 'p9'], polygons: [] },
+      { id: 'p7', name: 'Moonfen', owner: 'dusk', x: 60, y: 380, w: 210, h: 150, industry: 2, army: 4, terrain: 'plains', mountainScore: 3, defenseBonus: 0, mountainIcons: [], neighbors: ['p4', 'p8'], polygons: [] },
+      { id: 'p8', name: 'Violet Gate', owner: 'dusk', x: 270, y: 380, w: 170, h: 150, industry: 3, army: 5, terrain: 'hills', mountainScore: 48, defenseBonus: 1, mountainIcons: [{ x: 340, y: 440 }], neighbors: ['p5', 'p7', 'p9'], polygons: [] },
+      { id: 'p9', name: 'Starfall', owner: 'ember', x: 440, y: 380, w: 210, h: 150, industry: 1, army: 6, terrain: 'plains', mountainScore: 9, defenseBonus: 0, mountainIcons: [], neighbors: ['p6', 'p8'], polygons: [] }
     ]
   };
 }
@@ -48,6 +48,9 @@ export function generateProceduralWorld({ columns = 8, rows = 6, nationCount = 6
       const py = startY + y * cellH;
       const owner = centers.map(center => ({ id: center.id, d: Math.hypot(center.x - px, center.y - py) + randomInt(0, 45) })).sort((a, b) => a.d - b.d)[0].id;
       const jitter = () => randomInt(-8, 8);
+      const mountainScore = Math.max(0, Math.min(100, Math.round(20 + Math.sin(x * 0.8) * 18 + Math.cos(y * 1.1) * 16 + randomInt(-20, 28))));
+      const defenseBonus = mountainScore >= 65 ? 2 : mountainScore >= 35 ? 1 : 0;
+      const mountainIcons = Array.from({ length: defenseBonus }, (_, i) => ({ x: px + 26 + i * 28 + randomInt(-5, 5), y: py + 24 + randomInt(-5, 5) }));
       provinces.push({
         id,
         name: `${provinceA[(x + y) % provinceA.length]}${provinceB[(x * 2 + y) % provinceB.length]}`,
@@ -61,6 +64,10 @@ export function generateProceduralWorld({ columns = 8, rows = 6, nationCount = 6
         polygons: [[[px + jitter(), py + jitter()], [px + cellW - 10 + jitter(), py + jitter()], [px + cellW - 6 + jitter(), py + cellH - 8 + jitter()], [px + jitter(), py + cellH - 6 + jitter()]]],
         industry: 1 + randomInt(0, 4),
         army: 2 + randomInt(0, 8),
+        terrain: defenseBonus === 2 ? 'mountains' : defenseBonus === 1 ? 'hills' : 'plains',
+        mountainScore,
+        defenseBonus,
+        mountainIcons,
         neighbors: []
       });
     }
@@ -185,6 +192,7 @@ function buildProvinces(provincesRaw, cellsByProvince, cellById, vertexById, bur
       const pop = Number(province.rural) || provinceCells.reduce((sum, cell) => sum + (Number(cell.pop) || 0), 0);
       const area = Number(province.area) || provinceCells.reduce((sum, cell) => sum + (Number(cell.area) || 0), 0);
       const fortBonus = burg?.citadel ? 1 : 0;
+      const terrain = calculateProvinceTerrain(provinceCells);
       const polygons = buildProvinceBoundaryPolygons(provinceCells, vertexById);
       return {
         id: `p${provinceId}`,
@@ -201,10 +209,32 @@ function buildProvinces(provincesRaw, cellsByProvince, cellById, vertexById, bur
         polygons,
         industry: Math.max(1, Math.min(10, Math.round(urban / 8) + fortBonus + 1)),
         army: Math.max(2, Math.min(20, Math.round(pop / 35) + fortBonus + 2)),
+        terrain: terrain.type,
+        mountainScore: terrain.mountainScore,
+        defenseBonus: terrain.defenseBonus + fortBonus,
+        mountainIcons: terrain.icons,
         neighbors: []
       };
     });
   return normalizeProvinceLayout(provinces, mapWidth, mapHeight);
+}
+
+function calculateProvinceTerrain(provinceCells) {
+  const landCells = provinceCells.filter(cell => Number(cell.h) >= 20 || Number(cell.biome) > 0 || Number(cell.state) > 0);
+  const sample = landCells.length ? landCells : provinceCells;
+  const heights = sample.map(cell => Number(cell.h) || 0);
+  const averageHeight = heights.reduce((sum, h) => sum + h, 0) / Math.max(1, heights.length);
+  const mountainCells = sample.filter(cell => Number(cell.h) >= 70).length;
+  const hillCells = sample.filter(cell => Number(cell.h) >= 50).length;
+  const mountainRatio = mountainCells / Math.max(1, sample.length);
+  const hillRatio = hillCells / Math.max(1, sample.length);
+  const mountainScore = Math.round(Math.min(100, averageHeight * 0.7 + mountainRatio * 70 + hillRatio * 25));
+  const defenseBonus = mountainScore >= 70 ? 2 : mountainScore >= 42 ? 1 : 0;
+  const type = defenseBonus === 2 ? 'mountains' : defenseBonus === 1 ? 'hills' : 'plains';
+  const iconCount = Math.min(3, defenseBonus + (mountainScore > 82 ? 1 : 0));
+  const highCells = sample.filter(cell => Number(cell.h) >= (defenseBonus === 2 ? 65 : 50)).sort((a, b) => Number(b.h) - Number(a.h));
+  const icons = highCells.slice(0, iconCount).map(cell => ({ x: getPoint(cell)?.[0] || 0, y: getPoint(cell)?.[1] || 0 }));
+  return { type, mountainScore, defenseBonus, icons };
 }
 
 function buildProvinceBoundaryPolygons(provinceCells, vertexById) {
@@ -359,6 +389,7 @@ function normalizeProvinceLayout(list, sourceWidth = 1875, sourceHeight = 973) {
     y: 40 + p.y * scaleY,
     labelX: 40 + (p.labelX ?? p.x) * scaleX,
     labelY: 40 + (p.labelY ?? p.y) * scaleY,
+    mountainIcons: Array.isArray(p.mountainIcons) ? p.mountainIcons.map(point => ({ x: 40 + point.x * scaleX, y: 40 + point.y * scaleY })) : [],
     w: Math.max(34, Math.min(85, p.w)),
     h: Math.max(28, Math.min(72, p.h)),
     polygons: Array.isArray(p.polygons) ? p.polygons.map(poly => poly.map(point => [40 + point[0] * scaleX, 40 + point[1] * scaleY])) : [],
