@@ -95,21 +95,35 @@ export function convertAzgaarToGame(data) {
   if (!statesRaw.length) throw new Error('Missing Azgaar states. Export with Tools → Export → Data/JSON.');
   if (!provincesRaw.length) throw new Error('Missing Azgaar provinces. Export with Tools → Export → Data/JSON.');
   if (!cellsRaw.length) throw new Error('Missing Azgaar cells. This looks like the wrong export type.');
+
   const mapWidth = data.info?.width || pack.info?.width || data.settings?.width || 1875;
   const mapHeight = data.info?.height || pack.info?.height || data.settings?.height || 973;
   const stateById = new Map(statesRaw.map(s => [Number(s.i), s]));
   const cellById = new Map(cellsRaw.map(c => [Number(c.i), c]));
   const vertexById = new Map(verticesRaw.map(v => [Number(v.i), v]));
   const burgById = new Map(burgsRaw.map(b => [Number(b.i), b]));
-  const usedStateIds = [...new Set(provincesRaw.map(p => Number(p.state)).filter(id => id && stateById.has(id)))];
-  if (!usedStateIds.length) throw new Error('No playable states were connected to provinces in this Azgaar file.');
-  const nations = buildNations(usedStateIds, stateById);
+
   const cellsByProvince = groupCellsByProvince(cellsRaw);
+  const usedStateIds = getUsedStateIds(provincesRaw, cellsByProvince, stateById);
+  if (!usedStateIds.length) throw new Error('No playable states were connected to provinces in this Azgaar file.');
+
+  const nations = buildNations(usedStateIds, stateById);
   const provinces = buildProvinces(provincesRaw, cellsByProvince, cellById, vertexById, burgById, nations, mapWidth, mapHeight);
   assignProvinceNeighbors(provinces, cellsRaw, cellById);
   ensureFallbackNeighbors(provinces);
   if (provinces.length < 2) throw new Error('Not enough playable provinces were created from this Azgaar file.');
   return { nations, provinces };
+}
+
+function getUsedStateIds(provincesRaw, cellsByProvince, stateById) {
+  const ids = new Set();
+  provincesRaw.forEach(province => {
+    const stateId = Number(province.state);
+    if (!stateId || !stateById.has(stateId)) return;
+    const cells = cellsByProvince.get(Number(province.i)) || [];
+    if (cells.length) ids.add(stateId);
+  });
+  return [...ids];
 }
 
 function normalizeCollection(raw) {
@@ -133,7 +147,15 @@ function buildNations(stateIds, stateById) {
   stateIds.forEach((stateId, index) => {
     const state = stateById.get(Number(stateId));
     const militaryTotal = Array.isArray(state.military) ? state.military.reduce((sum, regiment) => sum + (Number(regiment.a) || 0), 0) : 0;
-    nations[`s${stateId}`] = { name: state.fullName || state.name || `State ${stateId}`, color: normalizeColor(state.color, colorPool[index % colorPool.length]), treasury: Math.max(200, Math.round((Number(state.urban) || 0) * 3 + (Number(state.rural) || 0) / 10)), manpower: Math.max(20, Math.round((Number(state.rural) || 0) / 20 + (Number(state.urban) || 0) / 2)), industry: Math.max(1, Math.round((Number(state.urban) || 0) / 30) || 1), command: Math.max(2, Math.min(10, Math.round((militaryTotal || 1000) / 5000) + 2)), diplomacy: state.diplomacy || [] };
+    nations[`s${stateId}`] = {
+      name: state.fullName || state.name || `State ${stateId}`,
+      color: normalizeColor(state.color, colorPool[index % colorPool.length]),
+      treasury: Math.max(200, Math.round((Number(state.urban) || 0) * 3 + (Number(state.rural) || 0) / 10)),
+      manpower: Math.max(20, Math.round((Number(state.rural) || 0) / 20 + (Number(state.urban) || 0) / 2)),
+      industry: Math.max(1, Math.round((Number(state.urban) || 0) / 30) || 1),
+      command: Math.max(2, Math.min(10, Math.round((militaryTotal || 1000) / 5000) + 2)),
+      diplomacy: state.diplomacy || []
+    };
   });
   return nations;
 }
@@ -150,22 +172,152 @@ function groupCellsByProvince(cellsRaw) {
 }
 
 function buildProvinces(provincesRaw, cellsByProvince, cellById, vertexById, burgById, nations, mapWidth, mapHeight) {
-  const provinces = provincesRaw.filter(province => Number(province.state) && nations[`s${Number(province.state)}`]).map(province => {
-    const provinceId = Number(province.i);
-    const stateId = Number(province.state);
-    const provinceCells = cellsByProvince.get(provinceId) || [];
-    const centerCell = cellById.get(Number(province.center)) || provinceCells[0];
-    const burg = burgById.get(Number(province.burg));
-    const point = getPoint(burg) || getPoint(centerCell) || getPoint(province) || [randomInt(80, 820), randomInt(80, 520)];
-    const urban = Number(burg?.population) || 0;
-    const pop = provinceCells.reduce((sum, cell) => sum + (Number(cell.pop) || 0), 0);
-    const area = provinceCells.reduce((sum, cell) => sum + (Number(cell.area) || 0), 0);
-    const fortBonus = burg?.citadel ? 1 : 0;
-    const polygons = provinceCells.map(cell => getVertexIds(cell).map(vertexId => getPoint(vertexById.get(Number(vertexId)))).filter(point => Array.isArray(point) && point.length >= 2)).filter(poly => poly.length >= 3);
-    return { id: `p${provinceId}`, sourceProvinceId: provinceId, name: province.fullName || province.name || `Province ${provinceId}`, owner: `s${stateId}`, color: normalizeColor(province.color, null), x: point[0], y: point[1], labelX: point[0], labelY: point[1], w: Math.max(42, Math.min(95, 44 + Math.sqrt(Math.max(area, 1)) / 3)), h: Math.max(34, Math.min(80, 34 + Math.sqrt(Math.max(area, 1)) / 4)), polygons, industry: Math.max(1, Math.min(8, Math.round(urban / 8) + fortBonus + 1)), army: Math.max(2, Math.min(16, Math.round(pop / 8) + fortBonus + 2)), neighbors: [] };
-  });
+  const provinces = provincesRaw
+    .filter(province => Number(province.state) && nations[`s${Number(province.state)}`] && (cellsByProvince.get(Number(province.i)) || []).length)
+    .map(province => {
+      const provinceId = Number(province.i);
+      const stateId = Number(province.state);
+      const provinceCells = cellsByProvince.get(provinceId) || [];
+      const centerCell = cellById.get(Number(province.center)) || provinceCells[0];
+      const burg = burgById.get(Number(province.burg));
+      const point = getPoint(province) || getPoint(burg) || getPoint(centerCell) || [randomInt(80, 820), randomInt(80, 520)];
+      const urban = Number(province.urban ?? burg?.population) || 0;
+      const pop = Number(province.rural) || provinceCells.reduce((sum, cell) => sum + (Number(cell.pop) || 0), 0);
+      const area = Number(province.area) || provinceCells.reduce((sum, cell) => sum + (Number(cell.area) || 0), 0);
+      const fortBonus = burg?.citadel ? 1 : 0;
+      const polygons = buildProvinceBoundaryPolygons(provinceCells, vertexById);
+      return {
+        id: `p${provinceId}`,
+        sourceProvinceId: provinceId,
+        name: province.fullName || province.name || `Province ${provinceId}`,
+        owner: `s${stateId}`,
+        color: normalizeColor(province.color, null),
+        x: point[0],
+        y: point[1],
+        labelX: point[0],
+        labelY: point[1],
+        w: Math.max(42, Math.min(95, 44 + Math.sqrt(Math.max(area, 1)) / 3)),
+        h: Math.max(34, Math.min(80, 34 + Math.sqrt(Math.max(area, 1)) / 4)),
+        polygons,
+        industry: Math.max(1, Math.min(10, Math.round(urban / 8) + fortBonus + 1)),
+        army: Math.max(2, Math.min(20, Math.round(pop / 35) + fortBonus + 2)),
+        neighbors: []
+      };
+    });
   return normalizeProvinceLayout(provinces, mapWidth, mapHeight);
 }
+
+function buildProvinceBoundaryPolygons(provinceCells, vertexById) {
+  const edgeMap = new Map();
+  provinceCells.forEach(cell => {
+    const vertices = getVertexIds(cell).map(Number).filter(id => Number.isFinite(id) && id >= 0);
+    if (vertices.length < 3) return;
+    for (let i = 0; i < vertices.length; i++) addBoundaryEdge(edgeMap, vertices[i], vertices[(i + 1) % vertices.length]);
+  });
+
+  const boundaryEdges = [...edgeMap.entries()].filter(([, edge]) => edge.count === 1);
+  const loops = traceBoundaryLoops(boundaryEdges, vertexById);
+  if (loops.length) return loops.map(poly => simplifyPolygon(poly, 240)).filter(poly => poly.length >= 3);
+  return buildConvexFallback(provinceCells, vertexById);
+}
+
+function addBoundaryEdge(edgeMap, a, b) {
+  if (a === b) return;
+  const key = edgeKey(a, b);
+  const existing = edgeMap.get(key);
+  if (existing) existing.count += 1;
+  else edgeMap.set(key, { a, b, count: 1 });
+}
+
+function traceBoundaryLoops(boundaryEntries, vertexById) {
+  const adjacency = new Map();
+  const remaining = new Set();
+  boundaryEntries.forEach(([key, edge]) => {
+    remaining.add(key);
+    if (!adjacency.has(edge.a)) adjacency.set(edge.a, new Set());
+    if (!adjacency.has(edge.b)) adjacency.set(edge.b, new Set());
+    adjacency.get(edge.a).add(edge.b);
+    adjacency.get(edge.b).add(edge.a);
+  });
+
+  const loops = [];
+  while (remaining.size) {
+    const firstKey = remaining.values().next().value;
+    const [start, second] = firstKey.split('|').map(Number);
+    const loop = [start, second];
+    remaining.delete(firstKey);
+    let previous = start;
+    let current = second;
+    let guard = 0;
+
+    while (current !== start && guard++ < boundaryEntries.length + 8) {
+      const options = [...(adjacency.get(current) || [])].filter(next => remaining.has(edgeKey(current, next)));
+      const next = options.find(candidate => candidate !== previous) ?? options[0];
+      if (next === undefined) break;
+      remaining.delete(edgeKey(current, next));
+      loop.push(next);
+      previous = current;
+      current = next;
+    }
+
+    if (loop.length >= 4 && loop[loop.length - 1] === start) loop.pop();
+    const polygon = loop.map(id => getPoint(vertexById.get(id))).filter(point => Array.isArray(point) && point.length >= 2 && Number.isFinite(point[0]) && Number.isFinite(point[1]));
+    if (polygon.length >= 3) loops.push(polygon);
+  }
+
+  return loops.sort((a, b) => polygonArea(b) - polygonArea(a)).slice(0, 6);
+}
+
+function buildConvexFallback(provinceCells, vertexById) {
+  const points = [];
+  provinceCells.forEach(cell => getVertexIds(cell).forEach(vertexId => {
+    const point = getPoint(vertexById.get(Number(vertexId)));
+    if (point && Number.isFinite(point[0]) && Number.isFinite(point[1])) points.push(point);
+  }));
+  const unique = [...new Map(points.map(point => [`${point[0]},${point[1]}`, point])).values()];
+  const hull = convexHull(unique);
+  return hull.length >= 3 ? [simplifyPolygon(hull, 240)] : [];
+}
+
+function convexHull(points) {
+  if (points.length <= 3) return points;
+  const sorted = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [];
+  for (const p of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const p = sorted[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  upper.pop();
+  lower.pop();
+  return lower.concat(upper);
+}
+
+function simplifyPolygon(poly, maxPoints = 240) {
+  if (poly.length <= maxPoints) return poly;
+  const step = poly.length / maxPoints;
+  const simplified = [];
+  for (let i = 0; i < maxPoints; i++) simplified.push(poly[Math.floor(i * step)]);
+  return simplified;
+}
+
+function polygonArea(poly) {
+  let area = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const [x1, y1] = poly[i];
+    const [x2, y2] = poly[(i + 1) % poly.length];
+    area += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(area / 2);
+}
+
+function edgeKey(a, b) { return a < b ? `${a}|${b}` : `${b}|${a}`; }
 
 function assignProvinceNeighbors(provinces, cellsRaw, cellById) {
   const provinceIdMap = new Map(provinces.map(p => [Number(p.sourceProvinceId), p.id]));
@@ -187,14 +339,31 @@ function assignProvinceNeighbors(provinces, cellsRaw, cellById) {
 
 function ensureFallbackNeighbors(provinces) {
   const lonely = provinces.filter(p => !p.neighbors?.length);
-  if (!lonely.length || lonely.length !== provinces.length) return;
-  provinces.forEach(province => { province.neighbors = provinces.filter(other => other.id !== province.id).map(other => ({ other, distance: distance(province, other) })).sort((a, b) => a.distance - b.distance).slice(0, 3).map(item => item.other.id); });
+  if (!lonely.length) return;
+  lonely.forEach(province => {
+    province.neighbors = provinces
+      .filter(other => other.id !== province.id)
+      .map(other => ({ other, distance: distance(province, other) }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 3)
+      .map(item => item.other.id);
+  });
 }
 
 function normalizeProvinceLayout(list, sourceWidth = 1875, sourceHeight = 973) {
   const scaleX = 820 / Math.max(1, Number(sourceWidth) || 1875);
   const scaleY = 520 / Math.max(1, Number(sourceHeight) || 973);
-  return list.map(p => ({ ...p, x: 40 + p.x * scaleX, y: 40 + p.y * scaleY, labelX: 40 + (p.labelX ?? p.x) * scaleX, labelY: 40 + (p.labelY ?? p.y) * scaleY, w: Math.max(34, Math.min(85, p.w)), h: Math.max(28, Math.min(72, p.h)), polygons: Array.isArray(p.polygons) ? p.polygons.map(poly => poly.map(point => [40 + point[0] * scaleX, 40 + point[1] * scaleY])) : [], neighbors: p.neighbors || [] }));
+  return list.map(p => ({
+    ...p,
+    x: 40 + p.x * scaleX,
+    y: 40 + p.y * scaleY,
+    labelX: 40 + (p.labelX ?? p.x) * scaleX,
+    labelY: 40 + (p.labelY ?? p.y) * scaleY,
+    w: Math.max(34, Math.min(85, p.w)),
+    h: Math.max(28, Math.min(72, p.h)),
+    polygons: Array.isArray(p.polygons) ? p.polygons.map(poly => poly.map(point => [40 + point[0] * scaleX, 40 + point[1] * scaleY])) : [],
+    neighbors: p.neighbors || []
+  }));
 }
 
 function getPoint(item) {
