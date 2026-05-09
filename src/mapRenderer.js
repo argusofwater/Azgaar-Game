@@ -58,12 +58,7 @@ export class CanvasMapRenderer {
   }
 
   selectProvince(id) { this.selectedProvinceId = id; this.queueDraw(); }
-
-  startConquestAnimation(id, fromColor, toColor) {
-    this.conquestAnimations.set(id, { fromColor, toColor, startedAt: performance.now(), duration: 1600 });
-    this.queueDraw(true);
-  }
-
+  startConquestAnimation(id, fromColor, toColor) { this.conquestAnimations.set(id, { fromColor, toColor, startedAt: performance.now(), duration: 1600 }); this.queueDraw(true); }
   startFrontPulse(front) { if (front) this.queueDraw(true); }
 
   queueDraw(forceAnimation = false) {
@@ -124,11 +119,7 @@ export class CanvasMapRenderer {
   }
 
   screenToWorld(x, y) { return [(x - this.offsetX) / this.zoom, (y - this.offsetY) / this.zoom]; }
-
-  getWorldPointFromEvent(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    return this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-  }
+  getWorldPointFromEvent(e) { const rect = this.canvas.getBoundingClientRect(); return this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top); }
 
   handleWheel(e) {
     e.preventDefault();
@@ -143,19 +134,12 @@ export class CanvasMapRenderer {
     this.queueDraw();
   }
 
-  handlePointerDown(e) {
-    this.isPanning = true;
-    this.panStart = { x: e.clientX - this.offsetX, y: e.clientY - this.offsetY };
-    this.pointerDownAt = { x: e.clientX, y: e.clientY };
-  }
+  handlePointerDown(e) { this.isPanning = true; this.panStart = { x: e.clientX - this.offsetX, y: e.clientY - this.offsetY }; this.pointerDownAt = { x: e.clientX, y: e.clientY }; }
 
   handlePointerMove(e) {
     const [wx, wy] = this.getWorldPointFromEvent(e);
     const hover = this.pickProvince(wx, wy)?.id || null;
-    if (hover !== this.hoverProvinceId) {
-      this.hoverProvinceId = hover;
-      this.queueDraw();
-    }
+    if (hover !== this.hoverProvinceId) { this.hoverProvinceId = hover; this.queueDraw(); }
     if (!this.isPanning) return;
     this.offsetX = e.clientX - this.panStart.x;
     this.offsetY = e.clientY - this.panStart.y;
@@ -221,16 +205,9 @@ export class CanvasMapRenderer {
     ctx.strokeStyle = selected ? '#facc15' : hovered ? 'rgba(250,204,21,0.6)' : 'rgba(226,232,240,0.38)';
     ctx.lineWidth = selected ? 2.8 / this.zoom : hovered ? 1.4 / this.zoom : 0.65 / this.zoom;
     if (p.polygons?.length) {
-      p.polygons.forEach(poly => {
-        this.tracePolygon(ctx, poly);
-        ctx.fill();
-        ctx.stroke();
-      });
+      p.polygons.forEach(poly => { this.tracePolygon(ctx, poly); ctx.fill(); ctx.stroke(); });
     } else {
-      ctx.beginPath();
-      ctx.rect(p.x, p.y, p.w, p.h);
-      ctx.fill();
-      ctx.stroke();
+      ctx.beginPath(); ctx.rect(p.x, p.y, p.w, p.h); ctx.fill(); ctx.stroke();
     }
     ctx.globalAlpha = 1;
     if (p.disputed) this.drawDisputedOverlay(ctx, p);
@@ -239,54 +216,61 @@ export class CanvasMapRenderer {
   drawTerrainIcons(ctx) {
     for (const p of this.provinces) {
       if (!p.mountainIcons?.length || (p.defenseBonus || 0) <= 0) continue;
-      const icons = p.mountainIcons.slice(0, 3);
-      icons.forEach((point, index) => this.drawMountainIcon(ctx, point.x, point.y, p.defenseBonus, index));
+      p.mountainIcons.slice(0, 3).forEach((point, index) => this.drawMountainIcon(ctx, point.x, point.y, p.defenseBonus, index));
     }
   }
 
+  getLabelScreenSize() {
+    return Math.max(13, Math.min(34, 11 + this.zoom * 1.35));
+  }
+
   drawProvinceLabels(ctx) {
-    const showAll = this.zoom >= 2.15;
+    const showStats = this.zoom >= 3.2;
+    const showNames = this.zoom >= 6.25;
     for (const p of this.provinces) {
       const important = p.id === this.selectedProvinceId || p.id === this.hoverProvinceId;
-      if (!showAll && !important) continue;
+      if (!showStats && !important) continue;
       const center = getProvinceCenter(p);
       const owner = this.nations[p.owner];
-      const label = this.zoom >= 3.1 || important ? `${p.name}` : '';
+      const title = showNames || important ? `${p.name}` : '';
       const stats = `A ${p.army ?? 0}  I ${p.industry ?? 0}${p.defenseBonus ? `  D +${p.defenseBonus}` : ''}`;
-      this.drawMapLabel(ctx, center.x, center.y, label, stats, owner?.color || '#facc15', important);
+      this.drawMapLabel(ctx, center.x, center.y, title, stats, owner?.color || '#facc15', important);
     }
   }
 
   drawMapLabel(ctx, x, y, title, stats, color, important = false) {
-    const titleSize = (important ? 14 : 12) / this.zoom;
-    const statSize = (important ? 13 : 12) / this.zoom;
+    const base = this.getLabelScreenSize();
+    const titlePx = (important ? base + 4 : base + 1) / this.zoom;
+    const statPx = (important ? base + 2 : base) / this.zoom;
+    const padX = (important ? 18 : 15) / this.zoom;
+    const padY = (important ? 8 : 7) / this.zoom;
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `900 ${statSize}px system-ui, sans-serif`;
+    ctx.font = `900 ${statPx}px system-ui, sans-serif`;
     const statWidth = ctx.measureText(stats).width;
     let titleWidth = 0;
     if (title) {
-      ctx.font = `900 ${titleSize}px system-ui, sans-serif`;
+      ctx.font = `950 ${titlePx}px system-ui, sans-serif`;
       titleWidth = ctx.measureText(title).width;
     }
-    const w = Math.max(statWidth, titleWidth) + 14 / this.zoom;
-    const h = (title ? 34 : 20) / this.zoom;
-    ctx.fillStyle = 'rgba(2, 6, 23, 0.78)';
+    const w = Math.max(statWidth, titleWidth) + padX;
+    const h = (title ? base * 2.8 : base * 1.65) / this.zoom;
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.84)';
     ctx.strokeStyle = important ? '#facc15' : color;
-    ctx.lineWidth = (important ? 1.8 : 1.2) / this.zoom;
-    roundRect(ctx, x - w / 2, y - h / 2, w, h, 6 / this.zoom);
+    ctx.lineWidth = (important ? 2.4 : 1.6) / this.zoom;
+    roundRect(ctx, x - w / 2, y - h / 2, w, h, 7 / this.zoom);
     ctx.fill();
     ctx.stroke();
     if (title) {
-      ctx.font = `900 ${titleSize}px system-ui, sans-serif`;
+      ctx.font = `950 ${titlePx}px system-ui, sans-serif`;
       ctx.fillStyle = '#f8fafc';
-      ctx.fillText(title, x, y - 7 / this.zoom);
-      ctx.font = `850 ${statSize}px system-ui, sans-serif`;
+      ctx.fillText(title, x, y - (base * 0.55) / this.zoom);
+      ctx.font = `900 ${statPx}px system-ui, sans-serif`;
       ctx.fillStyle = '#fde68a';
-      ctx.fillText(stats, x, y + 8 / this.zoom);
+      ctx.fillText(stats, x, y + (base * 0.62) / this.zoom);
     } else {
-      ctx.font = `850 ${statSize}px system-ui, sans-serif`;
+      ctx.font = `900 ${statPx}px system-ui, sans-serif`;
       ctx.fillStyle = '#fde68a';
       ctx.fillText(stats, x, y + 0.5 / this.zoom);
     }
@@ -294,7 +278,8 @@ export class CanvasMapRenderer {
   }
 
   drawMountainIcon(ctx, x, y, defenseBonus, index = 0) {
-    const size = (defenseBonus >= 2 ? 15 : 12) / this.zoom;
+    const screenSize = Math.max(13, Math.min(26, 11 + this.zoom * 0.7));
+    const size = (defenseBonus >= 2 ? screenSize + 3 : screenSize) / this.zoom;
     const ox = (index % 2) * size * 0.8;
     const oy = Math.floor(index / 2) * size * 0.65;
     ctx.save();
@@ -354,20 +339,20 @@ export class CanvasMapRenderer {
       ctx.save();
       ctx.globalAlpha = 0.96;
       this.drawPixelBorder(ctx, mid, angle, normal, attackerColor, defenderColor, pulse, now);
-      this.drawFrontStrength(ctx, mid.x + normal.x * 24 / this.zoom, mid.y + normal.y * 24 / this.zoom, front.attackerStrength ?? from.army, attackerColor);
-      this.drawFrontStrength(ctx, mid.x - normal.x * 24 / this.zoom, mid.y - normal.y * 24 / this.zoom, front.defenderStrength ?? to.army, defenderColor, front.terrainDefense || to.defenseBonus || 0);
+      this.drawFrontStrength(ctx, mid.x + normal.x * 30 / this.zoom, mid.y + normal.y * 30 / this.zoom, front.attackerStrength ?? from.army, attackerColor);
+      this.drawFrontStrength(ctx, mid.x - normal.x * 30 / this.zoom, mid.y - normal.y * 30 / this.zoom, front.defenderStrength ?? to.army, defenderColor, front.terrainDefense || to.defenseBonus || 0);
       ctx.restore();
     }
   }
 
   drawPixelBorder(ctx, mid, angle, normal, attackerColor, defenderColor, pulse, now) {
-    const segmentCount = Math.max(11, Math.min(21, Math.floor(this.zoom * 1.6)));
-    const spacing = 6.5 / this.zoom;
-    const pixel = 4.3 / this.zoom;
+    const segmentCount = Math.max(11, Math.min(25, Math.floor(this.zoom * 1.75)));
+    const spacing = 7.2 / this.zoom;
+    const pixel = Math.max(4.3, Math.min(7.5, 3.8 + this.zoom * 0.22)) / this.zoom;
     const tangent = { x: Math.cos(angle), y: Math.sin(angle) };
     for (let i = 0; i < segmentCount; i++) {
       const centered = i - (segmentCount - 1) / 2;
-      const wave = Math.sin(now / 80 + i * 0.85) * 2.8 / this.zoom;
+      const wave = Math.sin(now / 80 + i * 0.85) * 3.2 / this.zoom;
       const side = i % 2 === 0 ? 1 : -1;
       const x = mid.x + tangent.x * centered * spacing + normal.x * wave;
       const y = mid.y + tangent.y * centered * spacing + normal.y * wave;
@@ -377,28 +362,29 @@ export class CanvasMapRenderer {
       ctx.fillRect(x - pixel / 2, y - pixel / 2, pixel, pixel);
       ctx.strokeRect(x - pixel / 2, y - pixel / 2, pixel, pixel);
     }
-    ctx.strokeStyle = 'rgba(248, 113, 113, 0.76)';
-    ctx.lineWidth = (1.8 + pulse) / this.zoom;
-    ctx.setLineDash([8 / this.zoom, 5 / this.zoom]);
+    ctx.strokeStyle = 'rgba(248, 113, 113, 0.78)';
+    ctx.lineWidth = (2.0 + pulse) / this.zoom;
+    ctx.setLineDash([9 / this.zoom, 5 / this.zoom]);
     ctx.beginPath();
-    ctx.moveTo(mid.x - tangent.x * 48 / this.zoom, mid.y - tangent.y * 48 / this.zoom);
-    ctx.lineTo(mid.x + tangent.x * 48 / this.zoom, mid.y + tangent.y * 48 / this.zoom);
+    ctx.moveTo(mid.x - tangent.x * 58 / this.zoom, mid.y - tangent.y * 58 / this.zoom);
+    ctx.lineTo(mid.x + tangent.x * 58 / this.zoom, mid.y + tangent.y * 58 / this.zoom);
     ctx.stroke();
     ctx.setLineDash([]);
   }
 
   drawFrontStrength(ctx, x, y, strength, color, defenseBonus = 0) {
     const label = defenseBonus > 0 ? `${strength}+${defenseBonus}` : `${strength}`;
-    const fontSize = 16 / this.zoom;
+    const screenFont = Math.max(18, Math.min(34, 16 + this.zoom * 1.0));
+    const fontSize = screenFont / this.zoom;
     ctx.save();
-    ctx.font = `900 ${fontSize}px system-ui, sans-serif`;
+    ctx.font = `950 ${fontSize}px system-ui, sans-serif`;
     const metrics = ctx.measureText(label);
-    const w = metrics.width + 13 / this.zoom;
-    const h = 21 / this.zoom;
-    ctx.fillStyle = 'rgba(2, 6, 23, 0.90)';
+    const w = metrics.width + 16 / this.zoom;
+    const h = (screenFont + 10) / this.zoom;
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.92)';
     ctx.strokeStyle = color;
-    ctx.lineWidth = 1.7 / this.zoom;
-    roundRect(ctx, x - w / 2, y - h / 2, w, h, 5 / this.zoom);
+    ctx.lineWidth = 2 / this.zoom;
+    roundRect(ctx, x - w / 2, y - h / 2, w, h, 6 / this.zoom);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = '#f8fafc';
@@ -427,9 +413,7 @@ export class CanvasMapRenderer {
             this.tracePolygon(ctx, poly);
             if (ctx.isPointInPath(x, y)) return p;
           }
-        } else if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) {
-          return p;
-        }
+        } else if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) return p;
       }
       return null;
     } finally {
