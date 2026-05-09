@@ -373,7 +373,9 @@ function renderProvinceInfo() {
   if (!province) return els.provinceInfo.innerHTML = '<p class="muted">Select a province.</p>';
   const owner = state.nations[province.owner];
   const active = state.activeFronts.filter(f => f.fromProvinceId === province.id || f.toProvinceId === province.id);
-  els.provinceInfo.innerHTML = `<div class="stat"><span>Name</span><strong>${province.name}</strong></div><div class="stat"><span>Owner</span><strong>${owner?.name ?? 'Unknown'}</strong></div><div class="stat"><span>Industry</span><strong>${province.industry}</strong></div><div class="stat"><span>Army</span><strong>${province.army}</strong></div><div class="stat"><span>Status</span><strong>${province.disputed ? `Disputed ${(province.disputeBorder * 100).toFixed(0)}%` : active.length ? `${active.length} active front${active.length === 1 ? '' : 's'}` : 'Stable'}</strong></div><div class="stat"><span>Neighbors</span><strong>${province.neighbors?.length ?? 0}</strong></div>`;
+  const terrainName = String(province.terrain || 'plains').replace(/\b\w/g, c => c.toUpperCase());
+  const defense = Number(province.defenseBonus || 0);
+  els.provinceInfo.innerHTML = `<div class="stat"><span>Name</span><strong>${province.name}</strong></div><div class="stat"><span>Owner</span><strong>${owner?.name ?? 'Unknown'}</strong></div><div class="stat"><span>Terrain</span><strong>${terrainName}${defense ? ` +${defense} defense` : ''}</strong></div><div class="stat"><span>Mountain Score</span><strong>${province.mountainScore ?? 0}</strong></div><div class="stat"><span>Industry</span><strong>${province.industry}</strong></div><div class="stat"><span>Army</span><strong>${province.army}</strong></div><div class="stat"><span>Status</span><strong>${province.disputed ? `Disputed ${(province.disputeBorder * 100).toFixed(0)}%` : active.length ? `${active.length} active front${active.length === 1 ? '' : 's'}` : 'Stable'}</strong></div><div class="stat"><span>Neighbors</span><strong>${province.neighbors?.length ?? 0}</strong></div>`;
 }
 
 function renderNationStats() {
